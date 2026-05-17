@@ -24,6 +24,10 @@ RUN dotnet publish src/Finance.Api/Finance.Api.csproj -c Release -o /app/publish
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=api-build /app/publish ./
 
 ENTRYPOINT ["sh", "-c", "dotnet Finance.Api.dll --urls http://0.0.0.0:${PORT:-8080}"]
