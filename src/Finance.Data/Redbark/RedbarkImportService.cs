@@ -166,7 +166,37 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         entity.Direction = transaction.Direction;
         entity.Status = transaction.Status;
         entity.RawJson = transaction.Raw;
+        await ApplyMerchantTags(tenantId, entity, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return isNew;
+    }
+
+    private async Task ApplyMerchantTags(Guid tenantId, BankTransaction transaction, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(transaction.MerchantName))
+        {
+            return;
+        }
+
+        var merchantKey = transaction.MerchantName.Trim().ToLowerInvariant();
+        var tagIds = await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId && x.MerchantKey == merchantKey)
+            .Select(x => x.TransactionTagId)
+            .ToListAsync(cancellationToken);
+
+        if (tagIds.Count == 0)
+        {
+            return;
+        }
+
+        var existingTagIds = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transaction.Id && tagIds.Contains(x.TransactionTagId))
+            .Select(x => x.TransactionTagId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var tagId in tagIds.Except(existingTagIds))
+        {
+            dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transaction.Id, TransactionTagId = tagId, Source = "merchant" });
+        }
     }
 }

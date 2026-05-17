@@ -134,6 +134,16 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Select(x => new { x.Id, x.Name, x.AccountNumber })
             .ToDictionaryAsync(x => x.Id, x => new AccountDisplay(x.Name, x.AccountNumber), cancellationToken);
 
+        var transactionIds = transactionRows.Select(x => x.Id).ToList();
+        var tagsByTransaction = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+            .GroupBy(x => x.BankTransactionId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
+
         return transactionRows
             .Select(x =>
             {
@@ -154,9 +164,133 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                     x.PostedDate,
                     x.PostedAt,
                     x.Direction,
-                    x.Status);
+                    x.Status,
+                    tagsByTransaction.GetValueOrDefault(x.Id, []));
             })
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        return await dbContext.TransactionTags
+            .Where(x => x.TenantId == tenantId)
+            .OrderBy(x => x.Name)
+            .Select(x => new TransactionTagDto(x.Id, x.Name, x.Color))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<TransactionTagDto> CreateTag(CreateTransactionTagRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var name = request.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("Tag name is required.");
+        }
+
+        var tag = await dbContext.TransactionTags.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Name == name, cancellationToken);
+        if (tag is null)
+        {
+            tag = new TransactionTag { TenantId = tenantId, Name = name };
+            dbContext.TransactionTags.Add(tag);
+        }
+
+        tag.Color = string.IsNullOrWhiteSpace(request.Color) ? tag.Color : request.Color.Trim();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new TransactionTagDto(tag.Id, tag.Name, tag.Color);
+    }
+
+    public async Task<bool> DeleteTag(Guid tagId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var exists = await dbContext.TransactionTags.AnyAsync(x => x.TenantId == tenantId && x.Id == tagId, cancellationToken);
+        if (!exists)
+        {
+            return false;
+        }
+
+        await dbContext.BankTransactionTags.Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId).ExecuteDeleteAsync(cancellationToken);
+        await dbContext.MerchantTags.Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId).ExecuteDeleteAsync(cancellationToken);
+        await dbContext.TransactionTags.Where(x => x.TenantId == tenantId && x.Id == tagId).ExecuteDeleteAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<TransactionTagDto>> SetTransactionTags(Guid transactionId, UpdateTransactionTagsRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var exists = await dbContext.BankTransactions.AnyAsync(x => x.TenantId == tenantId && x.Id == transactionId, cancellationToken);
+        if (!exists)
+        {
+            return [];
+        }
+
+        var requestedTagIds = request.TagIds.Distinct().ToList();
+        var tags = await dbContext.TransactionTags
+            .Where(x => x.TenantId == tenantId && requestedTagIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        var validTagIds = tags.Select(x => x.Id).ToHashSet();
+
+        await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transactionId && !validTagIds.Contains(x.TransactionTagId))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var existingTagIds = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transactionId)
+            .Select(x => x.TransactionTagId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var tagId in validTagIds.Except(existingTagIds))
+        {
+            dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transactionId, TransactionTagId = tagId, Source = "manual" });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return tags.Select(x => new TransactionTagDto(x.Id, x.Name, x.Color)).OrderBy(x => x.Name).ToList();
+    }
+
+    public async Task<IReadOnlyList<MerchantTagRuleDto>> GetMerchantTagRules(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        return await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId)
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { Rule = x, Tag = y })
+            .OrderBy(x => x.Rule.MerchantName)
+            .ThenBy(x => x.Tag.Name)
+            .Select(x => new MerchantTagRuleDto(x.Rule.Id, x.Rule.MerchantName, new TransactionTagDto(x.Tag.Id, x.Tag.Name, x.Tag.Color)))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<MerchantTagRuleDto> CreateMerchantTagRule(CreateMerchantTagRuleRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var merchantName = request.MerchantName.Trim();
+        if (string.IsNullOrWhiteSpace(merchantName))
+        {
+            throw new InvalidOperationException("Merchant name is required.");
+        }
+
+        var merchantKey = GetMerchantKey(merchantName);
+        var tag = await dbContext.TransactionTags.FirstAsync(x => x.TenantId == tenantId && x.Id == request.TagId, cancellationToken);
+        var rule = await dbContext.MerchantTags.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.MerchantKey == merchantKey && x.TransactionTagId == request.TagId, cancellationToken);
+        if (rule is null)
+        {
+            rule = new MerchantTag { TenantId = tenantId, MerchantName = merchantName, MerchantKey = merchantKey, TransactionTagId = request.TagId };
+            dbContext.MerchantTags.Add(rule);
+        }
+
+        await ApplyMerchantTag(tenantId, merchantKey, request.TagId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new MerchantTagRuleDto(rule.Id, rule.MerchantName, new TransactionTagDto(tag.Id, tag.Name, tag.Color));
+    }
+
+    public async Task<bool> DeleteMerchantTagRule(Guid ruleId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        return await dbContext.MerchantTags.Where(x => x.TenantId == tenantId && x.Id == ruleId).ExecuteDeleteAsync(cancellationToken) > 0;
     }
 
     public async Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken)
@@ -191,6 +325,29 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     private static string GetAccountDisplayName(string name, string accountNumber)
     {
         return string.IsNullOrWhiteSpace(accountNumber) ? name : $"{name} - {accountNumber}";
+    }
+
+    private async Task ApplyMerchantTag(Guid tenantId, string merchantKey, Guid tagId, CancellationToken cancellationToken)
+    {
+        var transactionIds = await dbContext.BankTransactions
+            .Where(x => x.TenantId == tenantId && x.MerchantName != null && x.MerchantName.ToLower() == merchantKey)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var existingTransactionIds = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId && transactionIds.Contains(x.BankTransactionId))
+            .Select(x => x.BankTransactionId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var transactionId in transactionIds.Except(existingTransactionIds))
+        {
+            dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transactionId, TransactionTagId = tagId, Source = "merchant" });
+        }
+    }
+
+    private static string GetMerchantKey(string merchantName)
+    {
+        return merchantName.Trim().ToLowerInvariant();
     }
 
     private sealed record AccountDisplay(string Name, string AccountNumber);

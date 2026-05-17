@@ -32,6 +32,19 @@ export type Transaction = {
   postedAt?: string
   direction: string
   status: string
+  tags: TransactionTag[]
+}
+
+export type TransactionTag = {
+  id: string
+  name: string
+  color: string
+}
+
+export type MerchantTagRule = {
+  id: string
+  merchantName: string
+  tag: TransactionTag
 }
 
 export type ImportRun = {

@@ -1,14 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, type ColumnFiltersState, useReactTable } from '@tanstack/react-table'
-import { SlidersHorizontal, X } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Header } from '../components/Header'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { Transaction } from '../lib/types'
+import type { MerchantTagRule, Transaction, TransactionTag } from '../lib/types'
 
 type DateFilter = {
   from?: string
@@ -20,10 +20,61 @@ type AmountFilter = {
   max?: string
 }
 
+const tagColorOptions = ['#bae6fd', '#bbf7d0', '#fde68a', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e9d5ff']
+
 export function Transactions() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [showFilters, setShowFilters] = useState(false)
+  const [tagName, setTagName] = useState('')
+  const [tagColor, setTagColor] = useState('#64748b')
+  const [merchantName, setMerchantName] = useState('')
+  const [merchantTagId, setMerchantTagId] = useState('')
+  const queryClient = useQueryClient()
   const transactions = useQuery({ queryKey: ['transactions'], queryFn: () => api<Transaction[]>('/api/transactions?pageSize=100') })
+  const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<TransactionTag[]>('/api/tags') })
+  const merchantRules = useQuery({ queryKey: ['merchant-tags'], queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags') })
+  const createTag = useMutation({
+    mutationFn: () => api<TransactionTag>('/api/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: tagName, color: tagColor })
+    }),
+    onSuccess: () => {
+      setTagName('')
+      queryClient.invalidateQueries({ queryKey: ['tags'] })
+    }
+  })
+  const deleteTag = useMutation({
+    mutationFn: (tagId: string) => api<void>(`/api/tags/${tagId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tags'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
+    }
+  })
+  function setTransactionTags(transactionId: string, tagIds: string[]) {
+    void api<TransactionTag[]>(`/api/transactions/${transactionId}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tagIds })
+    })
+  }
+  const createMerchantRule = useMutation({
+    mutationFn: () => api<MerchantTagRule>('/api/merchant-tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merchantName, tagId: merchantTagId })
+    }),
+    onSuccess: () => {
+      setMerchantName('')
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
+    }
+  })
+  const deleteMerchantRule = useMutation({
+    mutationFn: (ruleId: string) => api<void>(`/api/merchant-tags/${ruleId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
+  })
   const helper = createColumnHelper<Transaction>()
   const table = useReactTable({
     data: transactions.data ?? [],
@@ -42,9 +93,14 @@ export function Transactions() {
       helper.accessor('description', {
         header: 'Description',
         cell: x => (
-          <div>
+          <div className="min-w-64 space-y-2 whitespace-normal">
             <p>{x.getValue()}</p>
             {x.row.original.merchantName && <p className="text-xs text-muted-foreground">{x.row.original.merchantName}</p>}
+            <TagEditor
+              allTags={tags.data ?? []}
+              selectedTags={x.row.original.tags}
+              onChange={y => setTransactionTags(x.row.original.id, y)}
+            />
           </div>
         ),
         filterFn: 'includesString'
@@ -52,6 +108,10 @@ export function Transactions() {
       helper.accessor('category', {
         header: 'Category',
         filterFn: 'includesString'
+      }),
+      helper.accessor('tags', {
+        header: 'Tags',
+        filterFn: (x, y, z: string) => x.getValue<TransactionTag[]>(y).some(a => a.name.toLowerCase().includes(z.toLowerCase()))
       }),
       helper.accessor('amountMinorUnits', {
         header: 'Amount',
@@ -64,7 +124,7 @@ export function Transactions() {
         }
       })
     ],
-    state: { columnFilters },
+    state: { columnFilters, columnVisibility: { tags: false } },
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel()
@@ -74,6 +134,68 @@ export function Transactions() {
   return (
     <section className="space-y-6">
       <Header title="Transactions" subtitle="Posted transactions only, ready for filtering and reconciliation checks." />
+      <Card className="grid gap-4 p-4 lg:grid-cols-[1fr_1.5fr]">
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">Tags</h2>
+          <div className="flex flex-wrap gap-2">
+            {(tags.data ?? []).map(x => (
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1" key={x.id}>
+                <TagPill tag={x} />
+                <button aria-label={`Delete tag ${x.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteTag.mutate(x.id)} type="button">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ))}
+            {!tags.isLoading && (tags.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setTagName(x.target.value)} placeholder="New tag" value={tagName} />
+            <div className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-2">
+              {tagColorOptions.map(x => (
+                <button
+                  aria-label={`Use tag color ${x}`}
+                  className={`h-5 w-5 rounded-full border border-border ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring ${tagColor.toLowerCase() === x ? 'ring-2 ring-foreground' : ''}`}
+                  key={x}
+                  onClick={() => setTagColor(x)}
+                  style={{ backgroundColor: x }}
+                  type="button"
+                />
+              ))}
+              <input aria-label="Custom tag color" className="h-6 w-8 rounded border-0 bg-transparent p-0" onChange={x => setTagColor(x.target.value)} type="color" value={tagColor} />
+            </div>
+            <Button className="h-9" disabled={!tagName.trim() || createTag.isPending} onClick={() => createTag.mutate()} size="sm">
+              <Plus data-icon="inline-start" />
+              Add
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">Merchant tag rules</h2>
+          <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+            <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantName(x.target.value)} placeholder="Merchant name" value={merchantName} />
+            <select className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantTagId(x.target.value)} value={merchantTagId}>
+              <option value="">Select tag</option>
+              {(tags.data ?? []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+            <Button disabled={!merchantName.trim() || !merchantTagId || createMerchantRule.isPending} onClick={() => createMerchantRule.mutate()} size="sm">
+              <Plus data-icon="inline-start" />
+              Rule
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(merchantRules.data ?? []).map(x => (
+              <span className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1 text-xs" key={x.id}>
+                {x.merchantName}
+                <TagPill tag={x.tag} />
+                <button aria-label={`Delete rule for ${x.merchantName}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteMerchantRule.mutate(x.id)} type="button">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ))}
+            {!merchantRules.isLoading && (merchantRules.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No merchant rules yet.</span>}
+          </div>
+        </div>
+      </Card>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Showing {table.getRowModel().rows.length} of {transactions.data?.length ?? 0} transactions
@@ -121,6 +243,14 @@ export function Transactions() {
               value={(table.getColumn('category')?.getFilterValue() as string | undefined) ?? ''}
             />
           </FilterField>
+          <FilterField label="Tags">
+            <input
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+              onChange={x => table.getColumn('tags')?.setFilterValue(x.target.value)}
+              placeholder="Search tags"
+              value={(table.getColumn('tags')?.getFilterValue() as string | undefined) ?? ''}
+            />
+          </FilterField>
           <FilterField className="xl:col-span-2" label="Amount">
             <AmountRangeFilter
               value={(table.getColumn('amountMinorUnits')?.getFilterValue() as AmountFilter | undefined) ?? {}}
@@ -155,6 +285,95 @@ function FilterField({ label, children, className }: { label: string; children: 
       {children}
     </label>
   )
+}
+
+function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTag[]; selectedTags: TransactionTag[]; onChange: (tagIds: string[]) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 })
+  const [selectedTagIds, setSelectedTagIds] = useState(() => selectedTags.map(x => x.id))
+  const containerRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const selectedIds = new Set(selectedTagIds)
+  const visibleSelectedTags = allTags.filter(x => selectedIds.has(x.id))
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [isOpen, selectedTags])
+
+  if (allTags.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="relative w-fit max-w-full" ref={containerRef}>
+      <button
+        aria-label="Edit transaction tags"
+        className="flex min-h-7 max-w-full flex-wrap items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-left hover:border-border hover:bg-muted"
+        onClick={() => {
+          const rect = buttonRef.current?.getBoundingClientRect()
+          if (rect) {
+            setPopupPosition({ left: rect.left, top: rect.bottom + 4 })
+          }
+
+          setIsOpen(true)
+        }}
+        ref={buttonRef}
+        type="button"
+      >
+        {visibleSelectedTags.length > 0 ? visibleSelectedTags.map(x => <TagPill key={x.id} tag={x} />) : <Plus className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+      {isOpen && (
+        <div className="fixed z-20 grid min-w-48 gap-1 rounded-md border border-border bg-background p-2 shadow-lg" style={{ left: popupPosition.left, top: popupPosition.top }}>
+          {allTags.map(x => (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted" key={x.id}>
+              <input
+                checked={selectedIds.has(x.id)}
+                className="h-3.5 w-3.5"
+                onChange={y => {
+                  const nextIds = y.target.checked ? [...selectedIds, x.id] : [...selectedIds].filter(z => z !== x.id)
+                  setSelectedTagIds(nextIds)
+                  onChange(nextIds)
+                }}
+                type="checkbox"
+              />
+              <TagPill tag={x} />
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TagPill({ tag }: { tag: TransactionTag }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: tag.color, color: getReadableTextColor(tag.color) }}>
+      {tag.name}
+    </span>
+  )
+}
+
+function getReadableTextColor(backgroundColor: string) {
+  const hex = backgroundColor.replace('#', '')
+  if (hex.length !== 6) {
+    return '#ffffff'
+  }
+
+  const red = Number.parseInt(hex.slice(0, 2), 16)
+  const green = Number.parseInt(hex.slice(2, 4), 16)
+  const blue = Number.parseInt(hex.slice(4, 6), 16)
+  const luminance = (red * 0.299 + green * 0.587 + blue * 0.114) / 255
+  return luminance > 0.65 ? '#111827' : '#ffffff'
 }
 
 function DateRangeFilter({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {

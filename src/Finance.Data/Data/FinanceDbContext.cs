@@ -12,6 +12,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<BankAccount> BankAccounts => Set<BankAccount>();
     public DbSet<Balance> Balances => Set<Balance>();
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
+    public DbSet<TransactionTag> TransactionTags => Set<TransactionTag>();
+    public DbSet<BankTransactionTag> BankTransactionTags => Set<BankTransactionTag>();
+    public DbSet<MerchantTag> MerchantTags => Set<MerchantTag>();
     public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
     public DbSet<ImportRun> ImportRuns => Set<ImportRun>();
     public DbSet<RedbarkRequestLog> RedbarkRequestLogs => Set<RedbarkRequestLog>();
@@ -30,6 +33,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             x.HasIndex(y => new { y.TenantId, y.ExternalTransactionId }).IsUnique();
             x.Property(y => y.Category).HasDefaultValue("Uncategorized");
             x.Property(y => y.Status).HasDefaultValue("posted");
+        });
+        modelBuilder.Entity<TransactionTag>(x => x.HasIndex(y => new { y.TenantId, y.Name }).IsUnique());
+        modelBuilder.Entity<BankTransactionTag>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.BankTransactionId, y.TransactionTagId }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.TransactionTagId });
+        });
+        modelBuilder.Entity<MerchantTag>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.MerchantKey, y.TransactionTagId }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.TransactionTagId });
         });
         modelBuilder.Entity<WebhookEvent>(x => x.HasIndex(y => new { y.TenantId, y.ExternalEventId }).IsUnique());
         modelBuilder.Entity<RedbarkRequestLog>(x => x.HasIndex(y => new { y.TenantId, y.RequestedAt }));

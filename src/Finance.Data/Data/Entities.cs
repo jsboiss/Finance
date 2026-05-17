@@ -86,6 +86,35 @@ public sealed class BankTransaction
     public JsonDocument RawJson { get; set; } = JsonDocument.Parse("{}");
 }
 
+public sealed class TransactionTag
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = "";
+    public string Color { get; set; } = "#64748b";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class BankTransactionTag
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid BankTransactionId { get; set; }
+    public Guid TransactionTagId { get; set; }
+    public string Source { get; set; } = "manual";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class MerchantTag
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string MerchantName { get; set; } = "";
+    public string MerchantKey { get; set; } = "";
+    public Guid TransactionTagId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class WebhookEvent
 {
     public Guid Id { get; set; } = Guid.NewGuid();

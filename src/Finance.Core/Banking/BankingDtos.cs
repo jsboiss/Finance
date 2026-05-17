@@ -20,7 +20,18 @@ public sealed record TransactionDto(
     DateOnly PostedDate,
     DateTimeOffset? PostedAt,
     string Direction,
-    string Status);
+    string Status,
+    IReadOnlyList<TransactionTagDto> Tags);
+
+public sealed record TransactionTagDto(Guid Id, string Name, string Color);
+
+public sealed record MerchantTagRuleDto(Guid Id, string MerchantName, TransactionTagDto Tag);
+
+public sealed record CreateTransactionTagRequest(string Name, string? Color);
+
+public sealed record UpdateTransactionTagsRequest(IReadOnlyList<Guid> TagIds);
+
+public sealed record CreateMerchantTagRuleRequest(string MerchantName, Guid TagId);
 
 public sealed record ImportRunDto(Guid Id, string Source, string Status, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, int ImportedCount, string? Error);
 
