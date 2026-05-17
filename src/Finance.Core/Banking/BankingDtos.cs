@@ -39,6 +39,27 @@ public sealed record ImportRunDto(Guid Id, string Source, string Status, DateTim
 
 public sealed record OperationsStatusDto(int RedbarkRequestsToday, int RedbarkRequestsThisMonth, int RedbarkRequestsTotal, DateTimeOffset? LastRedbarkRequestAt);
 
+public sealed record OverviewDto(
+    long? BalanceMinorUnits,
+    long CurrentMonthSpendMinorUnits,
+    long AverageDailySpendMinorUnits,
+    int TaggedCoverage,
+    string CurrentMonthKey,
+    string CurrentMonthLabel,
+    string TimeframeLabel,
+    long CurrentMonthIncomeMinorUnits,
+    IReadOnlyList<OverviewMonthSpendDto> Months,
+    IReadOnlyList<OverviewTagSpendDto> TopTags,
+    IReadOnlyList<OverviewDailyCashFlowDto> DailyCashFlow);
+
+public sealed record OverviewMonthSpendDto(string Key, string Label, long TotalMinorUnits, IReadOnlyList<OverviewMonthTagSpendDto> Tags);
+
+public sealed record OverviewMonthTagSpendDto(Guid TagId, long AmountMinorUnits);
+
+public sealed record OverviewTagSpendDto(Guid Id, string Name, string Color, long TotalMinorUnits, long CurrentMinorUnits, long PreviousMinorUnits, IReadOnlyList<long> Months);
+
+public sealed record OverviewDailyCashFlowDto(string Key, int Day, long IncomeMinorUnits, long ExpensesMinorUnits);
+
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
 
 public sealed record SubscriptionDto(

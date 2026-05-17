@@ -90,10 +90,159 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentMonthKey = $"{today.Year:D4}-{today.Month:D2}";
+        var firstVisibleMonth = today.AddMonths(-5);
+        var from = new DateOnly(firstVisibleMonth.Year, firstVisibleMonth.Month, 1);
+        var includeInternalTransfers = accountId is not null;
+
+        var accountIds = await dbContext.BankAccounts
+            .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var balance = await dbContext.Balances
+            .Where(x => x.TenantId == tenantId && accountIds.Contains(x.BankAccountId))
+            .GroupBy(x => x.BankAccountId)
+            .Select(x => x.OrderByDescending(y => y.AsOf).Select(y => y.CurrentMinorUnits).FirstOrDefault())
+            .ToListAsync(cancellationToken);
+
+        var transactionRows = await dbContext.BankTransactions
+            .Where(x => x.TenantId == tenantId
+                && accountIds.Contains(x.BankAccountId)
+                && x.Status == "posted"
+                && x.PostedDate >= from)
+            .Select(x => new OverviewTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .ToListAsync(cancellationToken);
+
+        var transactionIds = transactionRows.Select(x => x.Id).ToList();
+        var internalTagName = DefaultBankingData.InternalTransferTagName.ToLowerInvariant();
+        var tagsByTransaction = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+            .GroupBy(x => x.BankTransactionId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
+
+        var monthKeys = Enumerable.Range(0, 6)
+            .Select(x => from.AddMonths(x))
+            .Select(x => $"{x.Year:D4}-{x.Month:D2}")
+            .ToList();
+        var monthRows = monthKeys.Select(x => new OverviewMonthAccumulator(x, FormatMonthLabel(x))).ToList();
+        var monthMap = monthRows.ToDictionary(x => x.Key);
+        var tagMap = new Dictionary<Guid, OverviewTagAccumulator>();
+        var dailyCashFlow = GetDailyCashFlowDays(currentMonthKey);
+        var dailyCashFlowMap = dailyCashFlow.ToDictionary(x => x.Key);
+        var expensesCount = 0;
+        var taggedCount = 0;
+        long currentMonthIncome = 0;
+
+        foreach (var transaction in transactionRows)
+        {
+            var tags = tagsByTransaction.GetValueOrDefault(transaction.Id, []);
+            if (!includeInternalTransfers && tags.Any(x => x.Name.ToLowerInvariant() == internalTagName))
+            {
+                continue;
+            }
+
+            var monthKey = $"{transaction.PostedDate.Year:D4}-{transaction.PostedDate.Month:D2}";
+            if (monthKey == currentMonthKey && dailyCashFlowMap.TryGetValue(transaction.PostedDate.ToString("yyyy-MM-dd"), out var day))
+            {
+                if (transaction.AmountMinorUnits > 0)
+                {
+                    day.IncomeMinorUnits += transaction.AmountMinorUnits;
+                    currentMonthIncome += transaction.AmountMinorUnits;
+                }
+
+                if (transaction.AmountMinorUnits < 0)
+                {
+                    day.ExpensesMinorUnits += Math.Abs(transaction.AmountMinorUnits);
+                }
+            }
+
+            if (transaction.AmountMinorUnits >= 0 || !monthMap.TryGetValue(monthKey, out var month))
+            {
+                continue;
+            }
+
+            expensesCount += 1;
+            var spend = Math.Abs(transaction.AmountMinorUnits);
+            month.TotalMinorUnits += spend;
+            var spendingTags = tags.Count > 0 ? tags : [new TransactionTagDto(Guid.Empty, "Untagged", "#94a3b8")];
+
+            if (tags.Count > 0)
+            {
+                taggedCount += 1;
+            }
+
+            var monthIndex = monthKeys.IndexOf(monthKey);
+            for (var index = 0; index < spendingTags.Count; index++)
+            {
+                var tag = spendingTags[index];
+                var tagSpend = spend / spendingTags.Count;
+                if (index < spend % spendingTags.Count)
+                {
+                    tagSpend += 1;
+                }
+
+                if (!tagMap.TryGetValue(tag.Id, out var tagAccumulator))
+                {
+                    tagAccumulator = new OverviewTagAccumulator(tag.Id, tag.Name, tag.Color, monthKeys.Select(x => 0L).ToList());
+                    tagMap[tag.Id] = tagAccumulator;
+                }
+
+                tagAccumulator.TotalMinorUnits += tagSpend;
+                tagAccumulator.Months[monthIndex] += tagSpend;
+                month.Tags[tag.Id] = month.Tags.GetValueOrDefault(tag.Id) + tagSpend;
+            }
+        }
+
+        var topTags = tagMap.Values
+            .OrderByDescending(x => x.TotalMinorUnits)
+            .Take(8)
+            .Select(x => new OverviewTagSpendDto(
+                x.Id,
+                x.Name,
+                x.Color,
+                x.TotalMinorUnits,
+                x.Months[^1],
+                x.Months.Count > 1 ? x.Months[^2] : 0,
+                x.Months))
+            .ToList();
+
+        var currentMonthSpend = monthRows.LastOrDefault()?.TotalMinorUnits ?? 0;
+        var averageDailySpend = currentMonthSpend / GetElapsedDaysInMonth(currentMonthKey);
+        var monthDtos = monthRows
+            .Select(x => new OverviewMonthSpendDto(
+                x.Key,
+                x.Label,
+                x.TotalMinorUnits,
+                x.Tags.Select(y => new OverviewMonthTagSpendDto(y.Key, y.Value)).ToList()))
+            .ToList();
+
+        return new OverviewDto(
+            balance.Count > 0 ? balance.Sum(x => x ?? 0) : null,
+            currentMonthSpend,
+            averageDailySpend,
+            expensesCount > 0 ? (int)Math.Round(taggedCount / (double)expensesCount * 100) : 0,
+            currentMonthKey,
+            FormatFullMonthLabel(currentMonthKey),
+            GetTimeframeLabel(monthRows),
+            currentMonthIncome,
+            monthDtos,
+            topTags,
+            dailyCashFlow.Select(x => new OverviewDailyCashFlowDto(x.Key, x.Day, x.IncomeMinorUnits, x.ExpensesMinorUnits)).ToList());
+    }
+
     public async Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
-        var transactions = dbContext.BankTransactions.Where(x => x.TenantId == tenantId);
+        var transactions = dbContext.BankTransactions.AsNoTracking().Where(x => x.TenantId == tenantId);
 
         if (query.AccountId is { } accountId)
         {
@@ -147,14 +296,16 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var accountIds = transactionRows.Select(x => x.AccountId).Distinct().ToList();
         var accountDisplays = await dbContext.BankAccounts
+            .AsNoTracking()
             .Where(x => x.TenantId == tenantId && accountIds.Contains(x.Id))
             .Select(x => new { x.Id, x.Name, x.CustomName, x.AccountNumber })
             .ToDictionaryAsync(x => x.Id, x => new AccountDisplay(x.Name, x.CustomName, x.AccountNumber), cancellationToken);
 
         var transactionIds = transactionRows.Select(x => x.Id).ToList();
         var tagsByTransaction = await dbContext.BankTransactionTags
+            .AsNoTracking()
             .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
-            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+            .Join(dbContext.TransactionTags.AsNoTracking().Where(x => x.TenantId == tenantId),
                 x => x.TransactionTagId,
                 y => y.Id,
                 (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
@@ -948,6 +1099,57 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return string.IsNullOrWhiteSpace(accountNumber) ? referenceName : $"{referenceName} - {accountNumber}";
     }
 
+    private static IReadOnlyList<OverviewDailyCashFlowAccumulator> GetDailyCashFlowDays(string monthKey)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var year = int.Parse(monthKey[..4]);
+        var month = int.Parse(monthKey[5..7]);
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var visibleDays = today.Year == year && today.Month == month ? today.Day : daysInMonth;
+        return Enumerable.Range(1, visibleDays)
+            .Select(x => new OverviewDailyCashFlowAccumulator($"{monthKey}-{x:D2}", x))
+            .ToList();
+    }
+
+    private static int GetElapsedDaysInMonth(string monthKey)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var year = int.Parse(monthKey[..4]);
+        var month = int.Parse(monthKey[5..7]);
+        if (today.Year == year && today.Month == month)
+        {
+            return today.Day;
+        }
+
+        return DateTime.DaysInMonth(year, month);
+    }
+
+    private static string FormatMonthLabel(string monthKey)
+    {
+        var date = new DateTime(int.Parse(monthKey[..4]), int.Parse(monthKey[5..7]), 1);
+        return date.ToString("MMM");
+    }
+
+    private static string FormatFullMonthLabel(string monthKey)
+    {
+        var date = new DateTime(int.Parse(monthKey[..4]), int.Parse(monthKey[5..7]), 1);
+        return date.ToString("MMMM yyyy");
+    }
+
+    private static string GetTimeframeLabel(IReadOnlyList<OverviewMonthAccumulator> months)
+    {
+        var firstMonth = months.FirstOrDefault();
+        var lastMonth = months.LastOrDefault();
+        if (firstMonth is null || lastMonth is null)
+        {
+            return "No posted spending data yet";
+        }
+
+        return firstMonth.Key == lastMonth.Key
+            ? FormatFullMonthLabel(firstMonth.Key)
+            : $"{FormatFullMonthLabel(firstMonth.Key)} to {FormatFullMonthLabel(lastMonth.Key)}";
+    }
+
     private async Task ApplyMerchantTag(Guid tenantId, string merchantKey, Guid tagId, CancellationToken cancellationToken)
     {
         var merchantRows = await dbContext.BankTransactions
@@ -968,6 +1170,43 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         {
             dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transactionId, TransactionTagId = tagId, Source = "merchant" });
         }
+    }
+
+    private sealed record OverviewTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
+
+    private sealed class OverviewMonthAccumulator(string key, string label)
+    {
+        public string Key { get; } = key;
+
+        public string Label { get; } = label;
+
+        public long TotalMinorUnits { get; set; }
+
+        public Dictionary<Guid, long> Tags { get; } = [];
+    }
+
+    private sealed class OverviewTagAccumulator(Guid id, string name, string color, List<long> months)
+    {
+        public Guid Id { get; } = id;
+
+        public string Name { get; } = name;
+
+        public string Color { get; } = color;
+
+        public long TotalMinorUnits { get; set; }
+
+        public List<long> Months { get; } = months;
+    }
+
+    private sealed class OverviewDailyCashFlowAccumulator(string key, int day)
+    {
+        public string Key { get; } = key;
+
+        public int Day { get; } = day;
+
+        public long IncomeMinorUnits { get; set; }
+
+        public long ExpensesMinorUnits { get; set; }
     }
 
     private sealed record AccountDisplay(string Name, string CustomName, string AccountNumber);

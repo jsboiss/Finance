@@ -22,6 +22,7 @@ public static class DashboardEndpoints
         group.MapGet("/accounts/{accountId:guid}", GetAccount);
         group.MapPut("/accounts/{accountId:guid}", UpdateAccount);
         group.MapGet("/balances", GetBalances);
+        group.MapGet("/overview", GetOverview);
         group.MapGet("/transactions", GetTransactions);
         group.MapGet("/tags", GetTags);
         group.MapPost("/tags", CreateTag);
@@ -70,6 +71,11 @@ public static class DashboardEndpoints
     private static Task<IReadOnlyList<BalanceDto>> GetBalances(IBankingQueries queries, CancellationToken cancellationToken)
     {
         return queries.GetBalances(cancellationToken);
+    }
+
+    private static Task<OverviewDto> GetOverview(Guid? accountId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetOverview(accountId, cancellationToken);
     }
 
     private static Task<IReadOnlyList<TransactionDto>> GetTransactions(

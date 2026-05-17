@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import type React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CircleDollarSign, ReceiptText } from 'lucide-react'
+import { CircleDollarSign, Loader2, ReceiptText } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Metric } from '../components/Metric'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { Account, Transaction, TransactionTag } from '../lib/types'
+import type { Account, Overview as OverviewSummary, TransactionTag } from '../lib/types'
 
 type MonthSpend = {
   key: string
@@ -32,15 +32,13 @@ const internalTransferTagName = 'Internal'
 export function Overview() {
   const [overviewAccountId, setOverviewAccountId] = useState('all')
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
-  const transactions = useQuery({ queryKey: ['transactions', 'overview'], queryFn: getOverviewTransactions })
-  const scopedTransactions = useMemo(() => getScopedTransactions(transactions.data ?? [], overviewAccountId), [transactions.data, overviewAccountId])
-  const availableBalances = getScopedAccounts(accounts.data ?? [], overviewAccountId).filter(x => x.currentBalanceMinorUnits != null)
-  const balance = availableBalances.length > 0 ? availableBalances.reduce((x, y) => x + (y.currentBalanceMinorUnits ?? 0), 0) : null
-  const includeInternalTransfers = overviewAccountId !== 'all'
-  const analysis = useMemo(() => analyzeSpending(scopedTransactions, includeInternalTransfers), [scopedTransactions, includeInternalTransfers])
+  const overview = useQuery({
+    queryKey: ['overview', overviewAccountId],
+    queryFn: () => api<OverviewSummary>(`/api/overview${overviewAccountId === 'all' ? '' : `?accountId=${overviewAccountId}`}`)
+  })
+  const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
-  const cashFlow = useMemo(() => analyzeCashFlow(scopedTransactions, analysis.currentMonthKey, overviewAccountId !== 'all'), [scopedTransactions, analysis.currentMonthKey, overviewAccountId])
-  const dailyCashFlow = useMemo(() => analyzeDailyCashFlow(scopedTransactions, analysis.currentMonthKey, includeInternalTransfers), [scopedTransactions, analysis.currentMonthKey, includeInternalTransfers])
+  const isLoading = accounts.isLoading || overview.isFetching
 
   return (
     <section className="space-y-6">
@@ -56,8 +54,9 @@ export function Overview() {
           {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
         </select>
       </div>
+      {isLoading && <OverviewLoading />}
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label={overviewAccountId === 'all' ? 'Total balance' : 'Account balance'} value={currency(balance, 'AUD')} />
+        <Metric label={overviewAccountId === 'all' ? 'Total balance' : 'Account balance'} value={currency(analysis.balance, 'AUD')} />
         <Metric label="This month spent" value={currency(analysis.currentMonthSpend, 'AUD')} />
         <Metric label="Avg daily spend" value={currency(analysis.averageDailySpend, 'AUD')} />
         <Metric label="Tagged coverage" value={`${analysis.taggedCoverage}%`} />
@@ -69,7 +68,7 @@ export function Overview() {
           <CardDescription>{analysis.currentMonthLabel}</CardDescription>
         </CardHeader>
         <CardContent>
-          <CashFlowRace income={cashFlow.income} expenses={cashFlow.expenses} />
+          <CashFlowRace income={analysis.currentMonthIncome} expenses={analysis.currentMonthSpend} />
         </CardContent>
       </Card>
 
@@ -79,7 +78,7 @@ export function Overview() {
           <CardDescription>{analysis.currentMonthLabel}</CardDescription>
         </CardHeader>
         <CardContent>
-          <DailyCashFlowBars days={dailyCashFlow} />
+          <DailyCashFlowBars days={analysis.dailyCashFlow} />
         </CardContent>
       </Card>
 
@@ -107,174 +106,51 @@ export function Overview() {
   )
 }
 
-function getScopedAccounts(accounts: Account[], accountId: string) {
-  return accountId === 'all' ? accounts : accounts.filter(x => x.id === accountId)
-}
-
-function getScopedTransactions(transactions: Transaction[], accountId: string) {
-  return accountId === 'all' ? transactions : transactions.filter(x => x.accountId === accountId)
-}
-
 function getLargestCategoryTags(tags: TagSpend[]) {
   return tags.filter(x => x.name.toLowerCase() !== internalTransferTagName.toLowerCase() && x.id !== fallbackTag.id)
 }
 
-function analyzeSpending(transactions: Transaction[], includeInternalTransfers: boolean) {
-  const posted = transactions.filter(x => x.status.toLowerCase() === 'posted')
-  const external = includeInternalTransfers ? posted : posted.filter(x => !hasInternalTransferTag(x))
-  const expenses = external.filter(x => x.amountMinorUnits < 0)
-  const income = external.filter(x => x.amountMinorUnits > 0)
-  const monthKeys = [...new Set(expenses.map(x => x.postedDate.slice(0, 7)))].sort().slice(-6)
-  const months: MonthSpend[] = monthKeys.map(x => ({
-    key: x,
-    label: formatMonthLabel(x),
-    total: 0,
-    tags: new Map<string, number>()
-  }))
-  const monthMap = new Map(months.map(x => [x.key, x]))
-  const tagMap = new Map<string, TagSpend>()
-  let taggedCount = 0
-
-  for (const transaction of expenses) {
-    const amount = Math.abs(transaction.amountMinorUnits)
-    const tags = transaction.tags.length > 0 ? transaction.tags : [fallbackTag]
-    const tagAmount = amount / tags.length
-    const month = monthMap.get(transaction.postedDate.slice(0, 7))
-    const monthIndex = monthKeys.indexOf(transaction.postedDate.slice(0, 7))
-    if (transaction.tags.length > 0) {
-      taggedCount += 1
-    }
-
-    if (month && monthIndex >= 0) {
-      month.total += amount
-    }
-
-    for (const tag of tags) {
-      if (!tagMap.has(tag.id)) {
-        tagMap.set(tag.id, {
-          id: tag.id,
-          name: tag.name,
-          color: tag.color,
-          total: 0,
-          current: 0,
-          previous: 0,
-          months: monthKeys.map(() => 0)
-        })
-      }
-
-      const tagSpend = tagMap.get(tag.id)!
-      tagSpend.total += tagAmount
-
-      if (month && monthIndex >= 0) {
-        month.tags.set(tag.id, (month.tags.get(tag.id) ?? 0) + tagAmount)
-        tagSpend.months[monthIndex] += tagAmount
-      }
-    }
-  }
-
-  const topTags = [...tagMap.values()].sort((x, y) => y.total - x.total)
-  for (const tag of topTags) {
-    tag.current = tag.months.at(-1) ?? 0
-    tag.previous = tag.months.at(-2) ?? 0
-  }
-
-  const currentMonthSpend = months.at(-1)?.total ?? 0
-  const currentMonthKey = months.at(-1)?.key ?? new Date().toISOString().slice(0, 7)
-  const averageDailySpend = Math.round(currentMonthSpend / getElapsedDaysInMonth(currentMonthKey))
-  const currentMonthIncome = income
-    .filter(x => x.postedDate.slice(0, 7) === currentMonthKey)
-    .reduce((x, y) => x + y.amountMinorUnits, 0)
-
+function mapOverview(overview?: OverviewSummary) {
   return {
-    months,
-    topTags: topTags.slice(0, 8),
-    totalSpend: topTags.reduce((x, y) => x + y.total, 0),
-    currentMonthIncome,
-    currentMonthKey,
-    currentMonthSpend,
-    currentMonthLabel: formatFullMonthLabel(currentMonthKey),
-    averageDailySpend,
-    taggedCoverage: expenses.length > 0 ? Math.round((taggedCount / expenses.length) * 100) : 0,
-    timeframeLabel: getTimeframeLabel(months)
+    balance: overview?.balanceMinorUnits ?? null,
+    currentMonthIncome: overview?.currentMonthIncomeMinorUnits ?? 0,
+    currentMonthSpend: overview?.currentMonthSpendMinorUnits ?? 0,
+    averageDailySpend: overview?.averageDailySpendMinorUnits ?? 0,
+    taggedCoverage: overview?.taggedCoverage ?? 0,
+    currentMonthKey: overview?.currentMonthKey ?? new Date().toISOString().slice(0, 7),
+    currentMonthLabel: overview?.currentMonthLabel ?? 'Loading',
+    timeframeLabel: overview?.timeframeLabel ?? 'Loading overview',
+    months: (overview?.months ?? []).map(x => ({
+      key: x.key,
+      label: x.label,
+      total: x.totalMinorUnits,
+      tags: new Map(x.tags.map(y => [y.tagId, y.amountMinorUnits]))
+    })),
+    topTags: (overview?.topTags ?? []).map(x => ({
+      id: x.id,
+      name: x.name,
+      color: x.color,
+      total: x.totalMinorUnits,
+      current: x.currentMinorUnits,
+      previous: x.previousMinorUnits,
+      months: x.months
+    })),
+    dailyCashFlow: (overview?.dailyCashFlow ?? []).map(x => ({
+      key: x.key,
+      day: x.day,
+      income: x.incomeMinorUnits,
+      expenses: x.expensesMinorUnits
+    }))
   }
 }
 
-function getElapsedDaysInMonth(monthKey: string) {
-  const now = new Date()
-  const [year, month] = monthKey.split('-').map(Number)
-  if (now.getFullYear() === year && now.getMonth() + 1 === month) {
-    return now.getDate()
-  }
-
-  return new Date(year, month, 0).getDate()
-}
-
-function analyzeCashFlow(transactions: Transaction[], monthKey: string, includeInternalTransfers: boolean) {
-  const current = transactions.filter(x =>
-    x.status.toLowerCase() === 'posted'
-    && (includeInternalTransfers || !hasInternalTransferTag(x))
-    && x.postedDate.slice(0, 7) === monthKey)
-
-  return {
-    income: current.filter(x => x.amountMinorUnits > 0).reduce((x, y) => x + y.amountMinorUnits, 0),
-    expenses: current.filter(x => x.amountMinorUnits < 0).reduce((x, y) => x + Math.abs(y.amountMinorUnits), 0)
-  }
-}
-
-function analyzeDailyCashFlow(transactions: Transaction[], monthKey: string, includeInternalTransfers: boolean) {
-  const [year, month] = monthKey.split('-').map(Number)
-  const daysInMonth = new Date(year, month, 0).getDate()
-  const today = new Date()
-  const visibleDays = today.getFullYear() === year && today.getMonth() + 1 === month ? today.getDate() : daysInMonth
-  const days = Array.from({ length: visibleDays }, (_, x) => ({
-    key: `${monthKey}-${String(x + 1).padStart(2, '0')}`,
-    day: x + 1,
-    income: 0,
-    expenses: 0
-  }))
-  const dayMap = new Map(days.map(x => [x.key, x]))
-
-  const current = transactions.filter(x =>
-    x.status.toLowerCase() === 'posted'
-    && (includeInternalTransfers || !hasInternalTransferTag(x))
-    && x.postedDate.slice(0, 7) === monthKey)
-
-  for (const transaction of current) {
-    const day = dayMap.get(transaction.postedDate)
-    if (!day) {
-      continue
-    }
-
-    if (transaction.amountMinorUnits > 0) {
-      day.income += transaction.amountMinorUnits
-    }
-
-    if (transaction.amountMinorUnits < 0) {
-      day.expenses += Math.abs(transaction.amountMinorUnits)
-    }
-  }
-
-  return days
-}
-
-async function getOverviewTransactions() {
-  const pageSize = 200
-  const pages: Transaction[][] = []
-
-  for (let page = 1; page <= 20; page += 1) {
-    const transactions = await api<Transaction[]>(`/api/transactions?page=${page}&pageSize=${pageSize}&sort=postedDate_desc`)
-    pages.push(transactions)
-
-    if (transactions.length < pageSize) {
-      break
-    }
-  }
-
-  return pages.flat()
-}
-
-function hasInternalTransferTag(transaction: Transaction) {
-  return transaction.tags.some(x => x.name.toLowerCase() === internalTransferTagName.toLowerCase())
+function OverviewLoading() {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span>Loading overview...</span>
+    </div>
+  )
 }
 
 function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {
@@ -443,26 +319,6 @@ function TagLegend({ tags }: { tags: Pick<TagSpend, 'id' | 'name' | 'color'>[] }
       {tags.map(x => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" key={x.id}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: x.color }} />{x.name}</span>)}
     </div>
   )
-}
-
-function formatMonthLabel(monthKey: string) {
-  return new Date(`${monthKey}-02T00:00:00`).toLocaleDateString(undefined, { month: 'short' })
-}
-
-function formatFullMonthLabel(monthKey: string) {
-  return new Date(`${monthKey}-02T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-}
-
-function getTimeframeLabel(months: MonthSpend[]) {
-  const firstMonth = months.at(0)
-  const lastMonth = months.at(-1)
-  if (!firstMonth || !lastMonth) {
-    return 'No posted spending data yet'
-  }
-
-  const first = new Date(`${firstMonth.key}-02T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-  const last = new Date(`${lastMonth.key}-02T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-  return firstMonth.key === lastMonth.key ? first : `${first} to ${last}`
 }
 
 function formatSignedCurrency(value: number, code: string) {

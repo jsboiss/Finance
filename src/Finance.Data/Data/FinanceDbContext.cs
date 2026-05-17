@@ -34,6 +34,10 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         modelBuilder.Entity<BankTransaction>(x =>
         {
             x.HasIndex(y => new { y.TenantId, y.ExternalTransactionId }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.PostedDate });
+            x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.PostedDate });
+            x.HasIndex(y => new { y.TenantId, y.Status, y.PostedDate });
+            x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.Status, y.PostedDate });
             x.Property(y => y.Category).HasDefaultValue("Uncategorized");
             x.Property(y => y.Status).HasDefaultValue("posted");
         });

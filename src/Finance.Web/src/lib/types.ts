@@ -65,6 +65,49 @@ export type OperationsStatus = {
   lastRedbarkRequestAt?: string
 }
 
+export type Overview = {
+  balanceMinorUnits: number | null
+  currentMonthSpendMinorUnits: number
+  averageDailySpendMinorUnits: number
+  taggedCoverage: number
+  currentMonthKey: string
+  currentMonthLabel: string
+  timeframeLabel: string
+  currentMonthIncomeMinorUnits: number
+  months: OverviewMonthSpend[]
+  topTags: OverviewTagSpend[]
+  dailyCashFlow: OverviewDailyCashFlow[]
+}
+
+export type OverviewMonthSpend = {
+  key: string
+  label: string
+  totalMinorUnits: number
+  tags: OverviewMonthTagSpend[]
+}
+
+export type OverviewMonthTagSpend = {
+  tagId: string
+  amountMinorUnits: number
+}
+
+export type OverviewTagSpend = {
+  id: string
+  name: string
+  color: string
+  totalMinorUnits: number
+  currentMinorUnits: number
+  previousMinorUnits: number
+  months: number[]
+}
+
+export type OverviewDailyCashFlow = {
+  key: string
+  day: number
+  incomeMinorUnits: number
+  expensesMinorUnits: number
+}
+
 export type Subscription = {
   id: string
   name: string

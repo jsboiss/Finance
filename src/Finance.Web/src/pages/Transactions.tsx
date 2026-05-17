@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, type ColumnFiltersState, useReactTable } from '@tanstack/react-table'
-import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
+import { Loader2, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Header } from '../components/Header'
 import { Button } from '../components/ui/button'
@@ -31,7 +31,11 @@ export function Transactions() {
   const [merchantName, setMerchantName] = useState('')
   const [merchantTagId, setMerchantTagId] = useState('')
   const queryClient = useQueryClient()
-  const transactions = useQuery({ queryKey: ['transactions'], queryFn: () => api<Transaction[]>('/api/transactions?pageSize=100') })
+  const transactions = useQuery({
+    queryKey: ['transactions'],
+    queryFn: () => api<Transaction[]>('/api/transactions?pageSize=100'),
+    placeholderData: keepPreviousData
+  })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<TransactionTag[]>('/api/tags') })
   const merchantRules = useQuery({ queryKey: ['merchant-tags'], queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags') })
@@ -142,14 +146,16 @@ export function Transactions() {
     getFilteredRowModel: getFilteredRowModel()
   })
   const hasFilters = columnFilters.length > 0
+  const isLoading = transactions.isLoading || transactions.isFetching
 
   return (
     <section className="space-y-6">
       <Header title="Transactions" subtitle="Posted transactions only, ready for filtering and reconciliation checks." />
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Showing {table.getRowModel().rows.length} of {transactions.data?.length ?? 0} transactions
-        </p>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <span>Showing {table.getRowModel().rows.length} of {transactions.data?.length ?? 0} transactions</span>
+        </div>
         <div className="flex gap-2">
           <Button onClick={() => setShowTagManagement(x => !x)} size="sm" variant={showTagManagement ? 'secondary' : 'outline'}>
             <Plus data-icon="inline-start" />
@@ -281,6 +287,7 @@ export function Transactions() {
         </Card>
       )}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
+        {isLoading && <div className="h-1 bg-primary/20"><div className="h-full w-1/3 animate-pulse bg-primary" /></div>}
         <Table>
           <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
             {table.getHeaderGroups().map(x => (
@@ -288,6 +295,13 @@ export function Transactions() {
             ))}
           </TableHeader>
           <TableBody className="divide-y divide-border">
+            {transactions.isLoading && (
+              <TableRow>
+                <TableCell className="px-4 py-8 text-muted-foreground" colSpan={5}>
+                  <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Loading transactions...</span>
+                </TableCell>
+              </TableRow>
+            )}
             {table.getRowModel().rows.map(x => (
               <TableRow key={x.id}>{x.getVisibleCells().map(y => <TableCell className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.cell, y.getContext())}</TableCell>)}</TableRow>
             ))}
