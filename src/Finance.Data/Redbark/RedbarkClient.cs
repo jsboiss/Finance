@@ -5,20 +5,21 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Finance.Core.Abstractions;
 using Finance.Core.Redbark;
+using Finance.Data.Data;
 using Microsoft.Extensions.Options;
 
-public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions> options) : IRedbarkClient
+public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions> options, FinanceDbContext dbContext) : IRedbarkClient
 {
     private readonly RedbarkOptions options = options.Value;
 
     public async Task<IReadOnlyList<RedbarkConnectionDto>> GetConnections(Guid tenantId, CancellationToken cancellationToken)
     {
-        return await GetDataList("/v1/connections", x => new RedbarkConnectionDto(x.GetProperty("id").GetString()!, x.GetProperty("institutionName").GetString() ?? "", JsonDocument.Parse(x.GetRawText())), cancellationToken);
+        return await GetDataList(tenantId, "/v1/connections", x => new RedbarkConnectionDto(x.GetProperty("id").GetString()!, x.GetProperty("institutionName").GetString() ?? "", JsonDocument.Parse(x.GetRawText())), cancellationToken);
     }
 
     public async Task<IReadOnlyList<RedbarkAccountDto>> GetAccounts(Guid tenantId, string connectionId, CancellationToken cancellationToken)
     {
-        var accounts = await GetPaginatedDataList("/v1/accounts?limit=200", x => new RedbarkAccountDto(x.GetProperty("id").GetString()!, x.GetProperty("connectionId").GetString()!, x.GetProperty("name").GetString()!, x.GetProperty("currency").GetString() ?? "AUD", JsonDocument.Parse(x.GetRawText())), cancellationToken);
+        var accounts = await GetPaginatedDataList(tenantId, "/v1/accounts?limit=200", x => new RedbarkAccountDto(x.GetProperty("id").GetString()!, x.GetProperty("connectionId").GetString()!, x.GetProperty("name").GetString()!, x.GetProperty("currency").GetString() ?? "AUD", JsonDocument.Parse(x.GetRawText())), cancellationToken);
         return accounts.Where(x => x.ConnectionId == connectionId).ToList();
     }
 
@@ -28,7 +29,7 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
         foreach (var accountIdChunk in accountIds.Chunk(100))
         {
             var accountIdQuery = string.Join(",", accountIdChunk);
-            var chunk = await GetDataList($"/v1/balances?accountIds={Uri.EscapeDataString(accountIdQuery)}", x => new RedbarkBalanceDto(x.GetProperty("accountId").GetString()!, ParseMinorUnits(GetNullableString(x, "currentBalance")), GetNullableString(x, "currency") ?? "AUD", DateTimeOffset.UtcNow, JsonDocument.Parse(x.GetRawText())), cancellationToken);
+            var chunk = await GetDataList(tenantId, $"/v1/balances?accountIds={Uri.EscapeDataString(accountIdQuery)}", x => new RedbarkBalanceDto(x.GetProperty("accountId").GetString()!, ParseMinorUnits(GetNullableString(x, "currentBalance")), GetNullableString(x, "currency") ?? "AUD", DateTimeOffset.UtcNow, JsonDocument.Parse(x.GetRawText())), cancellationToken);
             balances.AddRange(chunk);
         }
 
@@ -43,6 +44,7 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
 
         using var request = CreateRequest(uri);
         using var response = await httpClient.SendAsync(request, cancellationToken);
+        await LogRequest(tenantId, request, response, cancellationToken);
         await EnsureSuccess(response, cancellationToken);
         using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
         var transactions = document.RootElement.GetProperty("data").EnumerateArray()
@@ -53,16 +55,17 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
         return new RedbarkTransactionPage(transactions, nextCursor);
     }
 
-    private async Task<IReadOnlyList<T>> GetDataList<T>(string uri, Func<JsonElement, T> map, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<T>> GetDataList<T>(Guid tenantId, string uri, Func<JsonElement, T> map, CancellationToken cancellationToken)
     {
         using var request = CreateRequest(uri);
         using var response = await httpClient.SendAsync(request, cancellationToken);
+        await LogRequest(tenantId, request, response, cancellationToken);
         await EnsureSuccess(response, cancellationToken);
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         return root.GetProperty("data").EnumerateArray().Select(map).ToList();
     }
 
-    private async Task<IReadOnlyList<T>> GetPaginatedDataList<T>(string uri, Func<JsonElement, T> map, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<T>> GetPaginatedDataList<T>(Guid tenantId, string uri, Func<JsonElement, T> map, CancellationToken cancellationToken)
     {
         var results = new List<T>();
         var offset = 0;
@@ -73,6 +76,7 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
             var separator = uri.Contains('?') ? '&' : '?';
             using var request = CreateRequest($"{uri}{separator}offset={offset}");
             using var response = await httpClient.SendAsync(request, cancellationToken);
+            await LogRequest(tenantId, request, response, cancellationToken);
             await EnsureSuccess(response, cancellationToken);
             using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
             results.AddRange(document.RootElement.GetProperty("data").EnumerateArray().Select(map));
@@ -97,6 +101,18 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Add("Authorization", $"Bearer {options.ApiKey}");
         return request;
+    }
+
+    private async Task LogRequest(Guid tenantId, HttpRequestMessage request, HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        dbContext.RedbarkRequestLogs.Add(new RedbarkRequestLog
+        {
+            TenantId = tenantId,
+            Method = request.Method.Method,
+            Path = request.RequestUri?.PathAndQuery ?? "",
+            StatusCode = (int)response.StatusCode
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task EnsureSuccess(HttpResponseMessage response, CancellationToken cancellationToken)

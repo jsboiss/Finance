@@ -14,6 +14,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
     public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
     public DbSet<ImportRun> ImportRuns => Set<ImportRun>();
+    public DbSet<RedbarkRequestLog> RedbarkRequestLogs => Set<RedbarkRequestLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -26,5 +27,6 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         modelBuilder.Entity<Balance>(x => x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.AsOf }).IsUnique());
         modelBuilder.Entity<BankTransaction>(x => x.HasIndex(y => new { y.TenantId, y.ExternalTransactionId }).IsUnique());
         modelBuilder.Entity<WebhookEvent>(x => x.HasIndex(y => new { y.TenantId, y.ExternalEventId }).IsUnique());
+        modelBuilder.Entity<RedbarkRequestLog>(x => x.HasIndex(y => new { y.TenantId, y.RequestedAt }));
     }
 }

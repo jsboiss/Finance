@@ -123,5 +123,24 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<OperationsStatusDto> GetOperationsStatus(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var now = DateTimeOffset.UtcNow;
+        var today = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
+        var month = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var requests = dbContext.RedbarkRequestLogs.Where(x => x.TenantId == tenantId);
+        var todayCount = await requests.CountAsync(x => x.RequestedAt >= today, cancellationToken);
+        var monthCount = await requests.CountAsync(x => x.RequestedAt >= month, cancellationToken);
+        var totalCount = await requests.CountAsync(cancellationToken);
+        var lastRequestAt = await requests
+            .OrderByDescending(x => x.RequestedAt)
+            .Select(x => (DateTimeOffset?)x.RequestedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new OperationsStatusDto(todayCount, monthCount, totalCount, lastRequestAt);
+    }
+
     private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string Currency);
 }

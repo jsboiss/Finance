@@ -11,4 +11,6 @@ public interface IBankingQueries
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken);
+
+    Task<OperationsStatusDto> GetOperationsStatus(CancellationToken cancellationToken);
 }

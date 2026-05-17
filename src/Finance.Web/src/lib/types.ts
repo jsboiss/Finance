@@ -31,3 +31,10 @@ export type ImportRun = {
   importedCount: number
   error?: string
 }
+
+export type OperationsStatus = {
+  redbarkRequestsToday: number
+  redbarkRequestsThisMonth: number
+  redbarkRequestsTotal: number
+  lastRedbarkRequestAt?: string
+}

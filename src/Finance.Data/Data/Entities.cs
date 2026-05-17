@@ -100,3 +100,13 @@ public sealed class ImportRun
     public int ImportedCount { get; set; }
     public string? Error { get; set; }
 }
+
+public sealed class RedbarkRequestLog
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Method { get; set; } = "";
+    public string Path { get; set; } = "";
+    public int? StatusCode { get; set; }
+    public DateTimeOffset RequestedAt { get; set; } = DateTimeOffset.UtcNow;
+}

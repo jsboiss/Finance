@@ -17,6 +17,7 @@ public static class DashboardEndpoints
         group.MapGet("/balances", GetBalances);
         group.MapGet("/transactions", GetTransactions);
         group.MapGet("/imports", GetImports);
+        group.MapGet("/operations/status", GetOperationsStatus);
 
         return app;
     }
@@ -54,5 +55,10 @@ public static class DashboardEndpoints
     private static Task<IReadOnlyList<ImportRunDto>> GetImports(IBankingQueries queries, CancellationToken cancellationToken)
     {
         return queries.GetImportRuns(cancellationToken);
+    }
+
+    private static Task<OperationsStatusDto> GetOperationsStatus(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetOperationsStatus(cancellationToken);
     }
 }
