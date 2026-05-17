@@ -2,6 +2,7 @@ namespace Finance.Data.Redbark;
 
 using Finance.Core.Abstractions;
 using Finance.Core.Redbark;
+using Finance.Data.Banking;
 using Finance.Data.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +42,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         var run = new ImportRun { TenantId = tenantId, Source = source };
         dbContext.ImportRuns.Add(run);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
 
         try
         {
@@ -173,12 +175,13 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
     private async Task ApplyMerchantTags(Guid tenantId, BankTransaction transaction, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(transaction.MerchantName))
+        var merchantName = string.IsNullOrWhiteSpace(transaction.MerchantName) ? transaction.Description : transaction.MerchantName;
+        if (string.IsNullOrWhiteSpace(merchantName))
         {
             return;
         }
 
-        var merchantKey = transaction.MerchantName.Trim().ToLowerInvariant();
+        var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
         var tagIds = await dbContext.MerchantTags
             .Where(x => x.TenantId == tenantId && x.MerchantKey == merchantKey)
             .Select(x => x.TransactionTagId)

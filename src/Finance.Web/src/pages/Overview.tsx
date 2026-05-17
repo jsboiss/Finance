@@ -27,6 +27,7 @@ type TagSpend = {
 }
 
 const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '#94a3b8' }
+const internalTransferTagName = 'Internal'
 
 export function Overview() {
   const [cashFlowAccountId, setCashFlowAccountId] = useState('all')
@@ -94,8 +95,9 @@ export function Overview() {
 
 function analyzeSpending(transactions: Transaction[]) {
   const posted = transactions.filter(x => x.status.toLowerCase() === 'posted')
-  const expenses = posted.filter(x => x.amountMinorUnits < 0)
-  const income = posted.filter(x => x.amountMinorUnits > 0)
+  const external = posted.filter(x => !hasInternalTransferTag(x))
+  const expenses = external.filter(x => x.amountMinorUnits < 0)
+  const income = external.filter(x => x.amountMinorUnits > 0)
   const monthKeys = [...new Set(expenses.map(x => x.postedDate.slice(0, 7)))].sort().slice(-6)
   const months: MonthSpend[] = monthKeys.map(x => ({
     key: x,
@@ -184,6 +186,7 @@ function getElapsedDaysInMonth(monthKey: string) {
 function analyzeCashFlow(transactions: Transaction[], monthKey: string, accountId: string) {
   const current = transactions.filter(x =>
     x.status.toLowerCase() === 'posted'
+    && !hasInternalTransferTag(x)
     && x.postedDate.slice(0, 7) === monthKey
     && (accountId === 'all' || x.accountId === accountId))
 
@@ -207,6 +210,10 @@ async function getOverviewTransactions() {
   }
 
   return pages.flat()
+}
+
+function hasInternalTransferTag(transaction: Transaction) {
+  return transaction.tags.some(x => x.name.toLowerCase() === internalTransferTagName.toLowerCase())
 }
 
 function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {

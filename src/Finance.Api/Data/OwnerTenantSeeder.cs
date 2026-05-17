@@ -1,5 +1,6 @@
 namespace Finance.Api.Data;
 
+using Finance.Data.Banking;
 using Finance.Data.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +28,7 @@ public static class OwnerTenantSeeder
         {
             dbContext.Tenants.Add(new Tenant { Id = tenantId, Name = tenantName });
             await dbContext.SaveChangesAsync();
+            await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, CancellationToken.None);
             return;
         }
 
@@ -35,5 +37,7 @@ public static class OwnerTenantSeeder
             tenant.Name = tenantName;
             await dbContext.SaveChangesAsync();
         }
+
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, CancellationToken.None);
     }
 }

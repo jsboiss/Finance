@@ -5,6 +5,7 @@ using Finance.Api.Auth;
 using Finance.Core.Abstractions;
 using Finance.Core.Auth;
 using Finance.Core.Banking;
+using Finance.Data.Banking;
 using Finance.Data.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -192,6 +193,7 @@ public static class DashboardEndpoints
         var tenant = new Tenant { Name = name };
         dbContext.Tenants.Add(tenant);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await DefaultBankingData.EnsureDefaultTags(tenant.Id, dbContext, cancellationToken);
         return new TenantDto(tenant.Id, tenant.Name, tenant.CreatedAt);
     }
 

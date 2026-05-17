@@ -190,6 +190,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         return await dbContext.TransactionTags
             .Where(x => x.TenantId == tenantId)
             .OrderBy(x => x.Name)
@@ -269,6 +270,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<IReadOnlyList<MerchantTagRuleDto>> GetMerchantTagRules(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         return await dbContext.MerchantTags
             .Where(x => x.TenantId == tenantId)
             .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
@@ -290,7 +292,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             throw new InvalidOperationException("Merchant name is required.");
         }
 
-        var merchantKey = GetMerchantKey(merchantName);
+        var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
         var tag = await dbContext.TransactionTags.FirstAsync(x => x.TenantId == tenantId && x.Id == request.TagId, cancellationToken);
         var rule = await dbContext.MerchantTags.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.MerchantKey == merchantKey && x.TransactionTagId == request.TagId, cancellationToken);
         if (rule is null)
@@ -372,7 +374,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             TenantId = tenantId,
             Name = CleanRequired(request.Name, "Subscription name is required."),
             MerchantName = CleanRequired(request.MerchantName, "Merchant name is required."),
-            MerchantKey = GetMerchantKey(request.MerchantName),
+            MerchantKey = NormalizeKey(request.MerchantName),
             PaymentManager = CleanPaymentManager(request.PaymentManager),
             Cadence = CleanCadence(request.Cadence),
             ExpectedAmountMinorUnits = Math.Abs(request.ExpectedAmountMinorUnits),
@@ -398,7 +400,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         subscription.Name = CleanRequired(request.Name, "Subscription name is required.");
         subscription.MerchantName = CleanRequired(request.MerchantName, "Merchant name is required.");
-        subscription.MerchantKey = GetMerchantKey(request.MerchantName);
+        subscription.MerchantKey = NormalizeKey(request.MerchantName);
         subscription.PaymentManager = CleanPaymentManager(request.PaymentManager);
         subscription.Cadence = CleanCadence(request.Cadence);
         subscription.ExpectedAmountMinorUnits = Math.Abs(request.ExpectedAmountMinorUnits);
@@ -900,7 +902,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
     private static string GetTransactionMerchantKey(string? merchantName, string description)
     {
-        return GetMerchantKey(GetDisplayMerchantName(merchantName, description));
+        return NormalizeKey(GetDisplayMerchantName(merchantName, description));
     }
 
     private static string GetDisplayMerchantName(string? merchantName, string description)
@@ -953,7 +955,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Select(x => new { x.Id, x.MerchantName })
             .ToListAsync(cancellationToken);
         var transactionIds = merchantRows
-            .Where(x => x.MerchantName is not null && GetMerchantKey(x.MerchantName) == merchantKey)
+            .Where(x => x.MerchantName is not null && DefaultBankingData.GetMerchantKey(x.MerchantName) == merchantKey)
             .Select(x => x.Id)
             .ToList();
 
@@ -966,11 +968,6 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         {
             dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transactionId, TransactionTagId = tagId, Source = "merchant" });
         }
-    }
-
-    private static string GetMerchantKey(string merchantName)
-    {
-        return NormalizeKey(merchantName);
     }
 
     private sealed record AccountDisplay(string Name, string CustomName, string AccountNumber);
