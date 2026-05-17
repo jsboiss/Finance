@@ -11,6 +11,7 @@
     <File Path="src/Finance.Web/package-lock.json" />
     <File Path="src/Finance.Web/package.json" />
     <File Path="src/Finance.Web/README.md" />
+    <File Path="src/Finance.Web/components.json" />
     <File Path="src/Finance.Web/tsconfig.app.json" />
     <File Path="src/Finance.Web/tsconfig.json" />
     <File Path="src/Finance.Web/tsconfig.node.json" />
@@ -20,12 +21,17 @@
     <File Path="src/Finance.Web/src/components/AccountsList.tsx" />
     <File Path="src/Finance.Web/src/components/Header.tsx" />
     <File Path="src/Finance.Web/src/components/Metric.tsx" />
+    <File Path="src/Finance.Web/src/components/ui/badge.tsx" />
+    <File Path="src/Finance.Web/src/components/ui/button.tsx" />
+    <File Path="src/Finance.Web/src/components/ui/card.tsx" />
+    <File Path="src/Finance.Web/src/components/ui/table.tsx" />
     <File Path="src/Finance.Web/src/index.css" />
     <File Path="src/Finance.Web/src/layout/NavLink.tsx" />
     <File Path="src/Finance.Web/src/layout/Shell.tsx" />
     <File Path="src/Finance.Web/src/lib/api.ts" />
     <File Path="src/Finance.Web/src/lib/format.ts" />
     <File Path="src/Finance.Web/src/lib/types.ts" />
+    <File Path="src/Finance.Web/src/lib/utils.ts" />
     <File Path="src/Finance.Web/src/main.tsx" />
     <File Path="src/Finance.Web/src/pages/Accounts.tsx" />
     <File Path="src/Finance.Web/src/pages/Imports.tsx" />
