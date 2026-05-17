@@ -1,0 +1,76 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+.artifacts/
+**/.artifacts/
+TestResults/
+coverage/
+coverage.*/
+
+# .NET user and tooling files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.ncrunch*
+*.DotSettings.user
+*.pidb
+*.svclog
+*.pdb
+*.cache
+
+# ASP.NET local settings and generated static output
+src/Finance.Api/appsettings.Development.json
+src/Finance.Api/wwwroot/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+vite.config.*.timestamp-*
+vite.config.*.mtime-*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript / frontend tooling
+*.tsbuildinfo
+.eslintcache
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets.json
+*.pfx
+*.key
+*.pem
+
+# IDEs and editors
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Docker and local data
+.docker/
+docker-data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log

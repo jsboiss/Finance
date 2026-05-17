@@ -43,8 +43,8 @@ API documentation UI is intentionally out of scope for v1. The backend can still
 
 - Project layout:
   - `src/Finance.Api`: ASP.NET Core host, endpoints, auth, static React hosting, Quartz registration.
-  - `src/Finance.Application`: use cases, interfaces, tenancy abstractions, banking query services, ingestion orchestration.
-  - `src/Finance.Infrastructure`: EF Core DbContext, migrations, repositories, Redbark client, Quartz jobs.
+  - `src/Finance.Core`: use cases, interfaces, tenancy abstractions, banking query services, ingestion orchestration.
+  - `src/Finance.Data`: EF Core DbContext, migrations, repositories, Redbark client, Quartz jobs.
   - `src/Finance.Web`: React/Vite dashboard.
   - `tests/Finance.Tests`: unit tests.
   - `tests/Finance.IntegrationTests`: Postgres-backed integration tests using Testcontainers.
@@ -78,8 +78,9 @@ API documentation UI is intentionally out of scope for v1. The backend can still
   - Use a shared import flow for webhook events, backfill, and reconciliation.
   - Use idempotent upserts for connections, accounts, balances, and transactions.
   - Initial backfill imports the last 24 months.
-  - Daily reconciliation imports the last 60 days.
-  - Quartz schedules reconciliation; manual runs are supported through backend endpoints.
+  - Daily reconciliation imports the last 24 hours.
+  - Manual full reconciliation imports the last 24 months.
+  - Quartz schedules recent reconciliation; manual recent and full runs are supported through backend endpoints.
 
 - Frontend:
   - Create a dashboard shell with authenticated routes.

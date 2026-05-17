@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: finance
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: finance
+    ports:
+      - "55432:5432"
+    volumes:
+      - finance-postgres:/var/lib/postgresql
+
+volumes:
+  finance-postgres:
