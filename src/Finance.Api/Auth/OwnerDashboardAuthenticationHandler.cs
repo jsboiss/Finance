@@ -6,7 +6,7 @@ using Finance.Core.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-public sealed class DevDashboardAuthenticationHandler(
+public sealed class OwnerDashboardAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
@@ -17,7 +17,7 @@ public sealed class DevDashboardAuthenticationHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var configuredTenantId = configuration["DevTenantId"];
+        var configuredTenantId = configuration["OwnerTenantId"];
         if (!Guid.TryParse(configuredTenantId, out var tenantId))
         {
             tenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -26,7 +26,7 @@ public sealed class DevDashboardAuthenticationHandler(
         tenantContextAccessor.TenantId = tenantId;
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, "dev-user"),
+            new Claim(ClaimTypes.NameIdentifier, "owner"),
             new Claim("tenant_id", tenantId.ToString())
         };
         var identity = new ClaimsIdentity(claims, SchemeName);

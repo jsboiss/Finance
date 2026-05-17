@@ -15,7 +15,7 @@ public static class DashboardEndpoints
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api")
-            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = DevDashboardAuthenticationHandler.SchemeName });
+            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = OwnerDashboardAuthenticationHandler.SchemeName });
 
         group.MapGet("/accounts", GetAccounts);
         group.MapGet("/accounts/{accountId:guid}", GetAccount);
@@ -40,6 +40,8 @@ public static class DashboardEndpoints
         group.MapPost("/subscription-suggestions/refresh", RefreshSubscriptionSuggestions);
         group.MapPost("/subscription-suggestions/{suggestionId:guid}/accept", AcceptSubscriptionSuggestion);
         group.MapPost("/subscription-suggestions/{suggestionId:guid}/dismiss", DismissSubscriptionSuggestion);
+        group.MapGet("/tenants", GetTenants);
+        group.MapPost("/tenants", CreateTenant);
         group.MapGet("/api-clients", GetApiClients);
         group.MapPost("/api-clients", CreateApiClient);
         group.MapDelete("/api-clients/{apiClientId:guid}", RevokeApiClient);
@@ -176,34 +178,60 @@ public static class DashboardEndpoints
         return await queries.DismissSubscriptionSuggestion(suggestionId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
-    private static async Task<IReadOnlyList<ApiClientDto>> GetApiClients(FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<TenantDto>> GetTenants(FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
-        return await dbContext.ApiClients
-            .Where(x => x.TenantId == tenantContext.TenantId)
-            .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new ApiClientDto(x.Id, x.Name, x.CreatedAt, x.RevokedAt))
+        return await dbContext.Tenants
+            .OrderBy(x => x.Name)
+            .Select(x => new TenantDto(x.Id, x.Name, x.CreatedAt))
             .ToListAsync(cancellationToken);
     }
 
-    private static async Task<CreateApiClientResponse> CreateApiClient(CreateApiClientRequest request, FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    private static async Task<TenantDto> CreateTenant(CreateTenantRequest request, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
+        var name = string.IsNullOrWhiteSpace(request.Name) ? "External tenant" : request.Name.Trim();
+        var tenant = new Tenant { Name = name };
+        dbContext.Tenants.Add(tenant);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new TenantDto(tenant.Id, tenant.Name, tenant.CreatedAt);
+    }
+
+    private static async Task<IReadOnlyList<ApiClientDto>> GetApiClients(FinanceDbContext dbContext, CancellationToken cancellationToken)
+    {
+        return await dbContext.ApiClients
+            .Join(dbContext.Tenants,
+                x => x.TenantId,
+                y => y.Id,
+                (x, y) => new { Client = x, Tenant = y })
+            .OrderByDescending(x => x.Client.CreatedAt)
+            .Select(x => new ApiClientDto(x.Client.Id, x.Client.TenantId, x.Tenant.Name, x.Client.Name, x.Client.CreatedAt, x.Client.RevokedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<Results<Ok<CreateApiClientResponse>, NotFound>> CreateApiClient(CreateApiClientRequest request, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    {
+        var tenant = await dbContext.Tenants.FirstOrDefaultAsync(x => x.Id == request.TenantId, cancellationToken);
+        if (tenant is null)
+        {
+            return TypedResults.NotFound();
+        }
+
         var name = string.IsNullOrWhiteSpace(request.Name) ? "External UI" : request.Name.Trim();
         var apiKey = GenerateApiKey();
         var apiClient = new ApiClient
         {
-            TenantId = tenantContext.TenantId,
+            TenantId = tenant.Id,
             Name = name,
             KeyHash = ApiKeyHasher.Hash(apiKey)
         };
 
         dbContext.ApiClients.Add(apiClient);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new CreateApiClientResponse(new ApiClientDto(apiClient.Id, apiClient.Name, apiClient.CreatedAt, apiClient.RevokedAt), apiKey);
+        return TypedResults.Ok(new CreateApiClientResponse(new ApiClientDto(apiClient.Id, apiClient.TenantId, tenant.Name, apiClient.Name, apiClient.CreatedAt, apiClient.RevokedAt), apiKey));
     }
 
-    private static async Task<Results<NoContent, NotFound>> RevokeApiClient(Guid apiClientId, FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    private static async Task<Results<NoContent, NotFound>> RevokeApiClient(Guid apiClientId, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
-        var apiClient = await dbContext.ApiClients.FirstOrDefaultAsync(x => x.TenantId == tenantContext.TenantId && x.Id == apiClientId, cancellationToken);
+        var apiClient = await dbContext.ApiClients.FirstOrDefaultAsync(x => x.Id == apiClientId, cancellationToken);
         if (apiClient is null)
         {
             return TypedResults.NotFound();
@@ -224,9 +252,13 @@ public static class DashboardEndpoints
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    private sealed record ApiClientDto(Guid Id, string Name, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
+    private sealed record TenantDto(Guid Id, string Name, DateTimeOffset CreatedAt);
 
-    private sealed record CreateApiClientRequest(string? Name);
+    private sealed record CreateTenantRequest(string? Name);
+
+    private sealed record ApiClientDto(Guid Id, Guid TenantId, string TenantName, string Name, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
+
+    private sealed record CreateApiClientRequest(Guid TenantId, string? Name);
 
     private sealed record CreateApiClientResponse(ApiClientDto Client, string ApiKey);
 }

@@ -30,6 +30,17 @@ The API listens on:
 http://localhost:5000
 ```
 
+The dashboard uses the configured owner tenant:
+
+```json
+{
+  "OwnerTenantId": "11111111-1111-1111-1111-111111111111",
+  "OwnerTenantName": "Owner"
+}
+```
+
+Startup creates this tenant if it does not exist. Dashboard endpoints are expected to operate only on this owner tenant's data.
+
 ## External API
 
 External API routes require an API key in the `X-Api-Key` header.

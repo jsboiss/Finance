@@ -43,7 +43,7 @@ export function Overview() {
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="Total balance" value={currency(totalBalance, 'AUD')} />
         <Metric label="This month spent" value={currency(analysis.currentMonthSpend, 'AUD')} />
-        <Metric label="Month change" value={formatSignedCurrency(analysis.monthChange, 'AUD')} />
+        <Metric label="Avg daily spend" value={currency(analysis.averageDailySpend, 'AUD')} />
         <Metric label="Tagged coverage" value={`${analysis.taggedCoverage}%`} />
       </div>
 
@@ -151,8 +151,8 @@ function analyzeSpending(transactions: Transaction[]) {
   }
 
   const currentMonthSpend = months.at(-1)?.total ?? 0
-  const previousMonthSpend = months.at(-2)?.total ?? 0
   const currentMonthKey = months.at(-1)?.key ?? new Date().toISOString().slice(0, 7)
+  const averageDailySpend = Math.round(currentMonthSpend / getElapsedDaysInMonth(currentMonthKey))
   const currentMonthIncome = income
     .filter(x => x.postedDate.slice(0, 7) === currentMonthKey)
     .reduce((x, y) => x + y.amountMinorUnits, 0)
@@ -165,10 +165,20 @@ function analyzeSpending(transactions: Transaction[]) {
     currentMonthKey,
     currentMonthSpend,
     currentMonthLabel: formatFullMonthLabel(currentMonthKey),
-    monthChange: currentMonthSpend - previousMonthSpend,
+    averageDailySpend,
     taggedCoverage: expenses.length > 0 ? Math.round((taggedCount / expenses.length) * 100) : 0,
     timeframeLabel: getTimeframeLabel(months)
   }
+}
+
+function getElapsedDaysInMonth(monthKey: string) {
+  const now = new Date()
+  const [year, month] = monthKey.split('-').map(Number)
+  if (now.getFullYear() === year && now.getMonth() + 1 === month) {
+    return now.getDate()
+  }
+
+  return new Date(year, month, 0).getDate()
 }
 
 function analyzeCashFlow(transactions: Transaction[], monthKey: string, accountId: string) {

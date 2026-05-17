@@ -125,9 +125,17 @@ export type SubscriptionSuggestion = {
 
 export type ApiClient = {
   id: string
+  tenantId: string
+  tenantName: string
   name: string
   createdAt: string
   revokedAt?: string
+}
+
+export type Tenant = {
+  id: string
+  name: string
+  createdAt: string
 }
 
 export type CreateApiClientResponse = {

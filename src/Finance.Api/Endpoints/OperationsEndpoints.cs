@@ -1,6 +1,7 @@
 namespace Finance.Api.Endpoints;
 
 using Finance.Api.Auth;
+using Finance.Core.Abstractions;
 using Finance.Core.Redbark;
 using Finance.Data.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -12,7 +13,7 @@ public static class OperationsEndpoints
     public static IEndpointRouteBuilder MapOperationsEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/operations")
-            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = DevDashboardAuthenticationHandler.SchemeName });
+            .RequireAuthorization(new AuthorizeAttribute { AuthenticationSchemes = OwnerDashboardAuthenticationHandler.SchemeName });
 
         group.MapPost("/backfill", Backfill);
         group.MapPost("/reconcile", ReconcileRecent);
@@ -22,27 +23,27 @@ public static class OperationsEndpoints
         return app;
     }
 
-    private static async Task<Accepted> Backfill(HttpContext httpContext, IRedbarkImportService imports, CancellationToken cancellationToken)
+    private static async Task<Accepted> Backfill(ITenantContext tenantContext, IRedbarkImportService imports, CancellationToken cancellationToken)
     {
-        await imports.Backfill(GetTenantId(httpContext), cancellationToken);
+        await imports.Backfill(tenantContext.TenantId, cancellationToken);
         return TypedResults.Accepted((string?)null);
     }
 
-    private static async Task<Accepted> ReconcileRecent(HttpContext httpContext, IRedbarkImportService imports, CancellationToken cancellationToken)
+    private static async Task<Accepted> ReconcileRecent(ITenantContext tenantContext, IRedbarkImportService imports, CancellationToken cancellationToken)
     {
-        await imports.ReconcileRecent(GetTenantId(httpContext), cancellationToken);
+        await imports.ReconcileRecent(tenantContext.TenantId, cancellationToken);
         return TypedResults.Accepted((string?)null);
     }
 
-    private static async Task<Accepted> ReconcileFull(HttpContext httpContext, IRedbarkImportService imports, CancellationToken cancellationToken)
+    private static async Task<Accepted> ReconcileFull(ITenantContext tenantContext, IRedbarkImportService imports, CancellationToken cancellationToken)
     {
-        await imports.ReconcileFull(GetTenantId(httpContext), cancellationToken);
+        await imports.ReconcileFull(tenantContext.TenantId, cancellationToken);
         return TypedResults.Accepted((string?)null);
     }
 
-    private static async Task<NoContent> ClearData(HttpContext httpContext, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<NoContent> ClearData(ITenantContext tenantContext, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
-        var tenantId = GetTenantId(httpContext);
+        var tenantId = tenantContext.TenantId;
         await dbContext.Balances.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.BankTransactions.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.BankAccounts.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
@@ -51,10 +52,5 @@ public static class OperationsEndpoints
         await dbContext.ImportRuns.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.RedbarkRequestLogs.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
         return TypedResults.NoContent();
-    }
-
-    private static Guid GetTenantId(HttpContext httpContext)
-    {
-        return Guid.Parse(httpContext.User.FindFirst("tenant_id")!.Value);
     }
 }

@@ -28,21 +28,20 @@ Every external request must include:
 X-Api-Key: <apiKey>
 ```
 
-## Operator Provisioning
+## Access Model
 
-The Finance dashboard is the operator surface for API access. Use `Settings` to create an API client for the current tenant, then copy the generated key. The plaintext key is only shown once.
+The Finance operator is the only person who can use the dashboard. External developers do not need dashboard access, repository access, or database access.
 
-For local development, the app seeds this tenant automatically:
+The operator will give you:
 
-```text
-11111111-1111-1111-1111-111111111111
-```
+- the API base URL
+- an API key
 
-After creating the API client, sync the tenant's bank data from the dashboard `Imports` page or call:
+Do not ask for, hard-code, or send a tenant id. Tenant selection is not part of the external API contract.
 
-```powershell
-Invoke-RestMethod -Method Post http://localhost:5000/api/operations/backfill
-```
+When you send `X-Api-Key`, the backend looks up the API client, resolves the tenant associated with that key, and filters all reads and writes to that tenant. If you need access to a different tenant, the operator must issue a different API key scoped to that tenant.
+
+Bank data sync is also operator-owned. If accounts or transactions are missing, ask the operator to run a sync.
 
 ## Agent Bootstrap Flow
 
