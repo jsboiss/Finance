@@ -41,16 +41,16 @@ public static class ServiceCollectionExtensions
 
     private static string GetPostgresConnectionString(IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("Finance");
-        if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            return connectionString;
-        }
-
         var databaseUrl = configuration["DATABASE_URL"];
         if (!string.IsNullOrWhiteSpace(databaseUrl))
         {
             return ConvertPostgresUrl(databaseUrl);
+        }
+
+        var connectionString = configuration.GetConnectionString("Finance");
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            return connectionString;
         }
 
         throw new InvalidOperationException("Configure ConnectionStrings:Finance or DATABASE_URL with a PostgreSQL connection string.");
