@@ -1,0 +1,12 @@
+.git
+.github
+.vs
+.artifacts
+bin
+obj
+**/bin
+**/obj
+**/node_modules
+src/Finance.Api/wwwroot
+*.user
+*.suo

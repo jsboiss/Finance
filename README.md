@@ -35,11 +35,18 @@ The dashboard uses the configured owner tenant:
 ```json
 {
   "OwnerTenantId": "11111111-1111-1111-1111-111111111111",
-  "OwnerTenantName": "Owner"
+  "OwnerTenantName": "Owner",
+  "OwnerDashboardUsername": "owner",
+  "OwnerDashboardPassword": "dev-password"
 }
 ```
 
 Startup creates this tenant if it does not exist. Dashboard endpoints are expected to operate only on this owner tenant's data.
+The dashboard is protected with HTTP Basic auth. Override the dashboard username and password in production.
+
+## Railway Deployment
+
+Use `RAILWAY_DEPLOYMENT.md` for the deployment checklist. Railway should build from the root `Dockerfile`, run one web service for the API and dashboard, and use Railway Postgres with `ConnectionStrings__Finance` configured on the app service.
 
 ## External API
 

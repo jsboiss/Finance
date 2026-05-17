@@ -20,7 +20,7 @@
     <ProjectReference Include="..\Finance.Data\Finance.Data.csproj" />
   </ItemGroup>
 
-  <Target Name="BuildReactApp" BeforeTargets="Publish" Condition="Exists('..\Finance.Web\package.json')">
+  <Target Name="BuildReactApp" BeforeTargets="Publish" Condition="'$(SkipReactBuild)' != 'true' And Exists('..\Finance.Web\package.json')">
     <Exec WorkingDirectory="..\Finance.Web" Command="npm install" />
     <Exec WorkingDirectory="..\Finance.Web" Command="npm run build" />
   </Target>

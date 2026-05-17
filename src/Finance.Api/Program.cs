@@ -21,6 +21,7 @@ var app = builder.Build();
 
 app.UseCors();
 app.UseAuthentication();
+app.UseDashboardProtection();
 app.UseAuthorization();
 app.MapOpenApi();
 app.MapDashboardEndpoints();
