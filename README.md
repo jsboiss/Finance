@@ -46,7 +46,7 @@ The dashboard is protected with HTTP Basic auth. Override the dashboard username
 
 ## Railway Deployment
 
-Use `RAILWAY_DEPLOYMENT.md` for the deployment checklist. Railway should build from the root `Dockerfile`, run one web service for the API and dashboard, and use Railway Postgres with `ConnectionStrings__Finance` configured on the app service.
+Use `RAILWAY_DEPLOYMENT.md` for the deployment checklist. Railway should build from the root `Dockerfile`, run one web service for the API and dashboard, and use Railway Postgres with `ConnectionStrings__Finance` or `DATABASE_URL` configured on the app service.
 
 ## External API
 

@@ -26,7 +26,19 @@ Redbark__ApiKey=<real Redbark API key>
 Redbark__WebhookSecret=<real Redbark webhook secret>
 ```
 
-Use the Railway internal Postgres URL for `ConnectionStrings__Finance` so traffic stays inside Railway.
+Use the Railway internal Postgres URL so traffic stays inside Railway. Either of these app service variables works:
+
+```text
+ConnectionStrings__Finance=${{Postgres.DATABASE_URL}}
+```
+
+or:
+
+```text
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+```
+
+If your Postgres service has a different Railway service name, use that name instead of `Postgres`.
 
 ## First deploy
 
