@@ -8,7 +8,7 @@ From the repository root:
 
 ```powershell
 docker compose up -d
-dotnet run
+dotnet run --project src/Finance.Api
 ```
 
 In a second terminal:

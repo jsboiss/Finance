@@ -3,7 +3,6 @@
     <Project Path="src/Finance.Api/Finance.Api.csproj" />
     <Project Path="src/Finance.Core/Finance.Core.csproj" />
     <Project Path="src/Finance.Data/Finance.Data.csproj" />
-    <Project Path="src/Finance.Dev/Finance.Dev.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Finance.IntegrationTests/Finance.IntegrationTests.csproj" />
