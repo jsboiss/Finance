@@ -14,6 +14,7 @@ public static class DashboardEndpoints
 
         group.MapGet("/accounts", GetAccounts);
         group.MapGet("/accounts/{accountId:guid}", GetAccount);
+        group.MapPut("/accounts/{accountId:guid}", UpdateAccount);
         group.MapGet("/balances", GetBalances);
         group.MapGet("/transactions", GetTransactions);
         group.MapGet("/tags", GetTags);
@@ -46,6 +47,12 @@ public static class DashboardEndpoints
     private static async Task<Results<Ok<AccountDto>, NotFound>> GetAccount(Guid accountId, IBankingQueries queries, CancellationToken cancellationToken)
     {
         var account = await queries.GetAccount(accountId, cancellationToken);
+        return account is null ? TypedResults.NotFound() : TypedResults.Ok(account);
+    }
+
+    private static async Task<Results<Ok<AccountDto>, NotFound>> UpdateAccount(Guid accountId, UpdateAccountRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var account = await queries.UpdateAccount(accountId, request, cancellationToken);
         return account is null ? TypedResults.NotFound() : TypedResults.Ok(account);
     }
 

@@ -31,8 +31,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
 
         var accountRows = await accounts
-            .OrderBy(x => x.Name)
-            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.AccountNumber, x.Currency))
+            .OrderBy(x => x.CustomName == "" ? x.Name : x.CustomName)
+            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.CustomName, x.AccountNumber, x.Currency))
             .ToListAsync(cancellationToken);
 
         var connectionIds = accountRows.Select(x => x.BankConnectionId).Distinct().ToList();
@@ -57,12 +57,27 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Select(x => new AccountDto(
                 x.Id,
                 x.Name,
+                x.CustomName,
                 x.AccountNumber,
-                GetAccountDisplayName(x.Name, x.AccountNumber),
+                GetAccountDisplayName(x.Name, x.CustomName, x.AccountNumber),
                 institutions.GetValueOrDefault(x.BankConnectionId, ""),
                 x.Currency,
                 latestBalances.GetValueOrDefault(x.Id)))
             .ToList();
+    }
+
+    public async Task<AccountDto?> UpdateAccount(Guid accountId, UpdateAccountRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var account = await dbContext.BankAccounts.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == accountId, cancellationToken);
+        if (account is null)
+        {
+            return null;
+        }
+
+        account.CustomName = request.CustomName?.Trim() ?? "";
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (await GetAccountDtos(tenantId, accountId, cancellationToken)).FirstOrDefault();
     }
 
     public async Task<IReadOnlyList<BalanceDto>> GetBalances(CancellationToken cancellationToken)
@@ -133,8 +148,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var accountIds = transactionRows.Select(x => x.AccountId).Distinct().ToList();
         var accountDisplays = await dbContext.BankAccounts
             .Where(x => x.TenantId == tenantId && accountIds.Contains(x.Id))
-            .Select(x => new { x.Id, x.Name, x.AccountNumber })
-            .ToDictionaryAsync(x => x.Id, x => new AccountDisplay(x.Name, x.AccountNumber), cancellationToken);
+            .Select(x => new { x.Id, x.Name, x.CustomName, x.AccountNumber })
+            .ToDictionaryAsync(x => x.Id, x => new AccountDisplay(x.Name, x.CustomName, x.AccountNumber), cancellationToken);
 
         var transactionIds = transactionRows.Select(x => x.Id).ToList();
         var tagsByTransaction = await dbContext.BankTransactionTags
@@ -149,14 +164,14 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return transactionRows
             .Select(x =>
             {
-                var account = accountDisplays.GetValueOrDefault(x.AccountId, new AccountDisplay(x.ExternalAccountName, ""));
+                var account = accountDisplays.GetValueOrDefault(x.AccountId, new AccountDisplay(x.ExternalAccountName, "", ""));
                 return new TransactionDto(
                     x.Id,
                     x.AccountId,
                     x.ExternalTransactionId,
-                    account.Name,
+                    GetAccountReferenceName(account.Name, account.CustomName),
                     account.AccountNumber,
-                    GetAccountDisplayName(account.Name, account.AccountNumber),
+                    GetAccountDisplayName(account.Name, account.CustomName, account.AccountNumber),
                     x.Description,
                     x.MerchantName,
                     x.MerchantCategoryCode,
@@ -920,9 +935,15 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return string.Join(" ", normalizedValue.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(x => !ignoredTokens.Contains(x)));
     }
 
-    private static string GetAccountDisplayName(string name, string accountNumber)
+    private static string GetAccountReferenceName(string name, string customName)
     {
-        return string.IsNullOrWhiteSpace(accountNumber) ? name : $"{name} - {accountNumber}";
+        return string.IsNullOrWhiteSpace(customName) ? name : customName;
+    }
+
+    private static string GetAccountDisplayName(string name, string customName, string accountNumber)
+    {
+        var referenceName = GetAccountReferenceName(name, customName);
+        return string.IsNullOrWhiteSpace(accountNumber) ? referenceName : $"{referenceName} - {accountNumber}";
     }
 
     private async Task ApplyMerchantTag(Guid tenantId, string merchantKey, Guid tagId, CancellationToken cancellationToken)
@@ -952,9 +973,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return NormalizeKey(merchantName);
     }
 
-    private sealed record AccountDisplay(string Name, string AccountNumber);
+    private sealed record AccountDisplay(string Name, string CustomName, string AccountNumber);
 
-    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string AccountNumber, string Currency);
+    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string CustomName, string AccountNumber, string Currency);
 
     private sealed record TransactionRow(
         Guid Id,

@@ -6,6 +6,8 @@ public interface IBankingQueries
 
     Task<AccountDto?> GetAccount(Guid accountId, CancellationToken cancellationToken);
 
+    Task<AccountDto?> UpdateAccount(Guid accountId, UpdateAccountRequest request, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<BalanceDto>> GetBalances(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);

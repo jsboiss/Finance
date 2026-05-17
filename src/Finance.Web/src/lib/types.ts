@@ -1,6 +1,7 @@
 export type Account = {
   id: string
   name: string
+  customName: string
   accountNumber: string
   displayName: string
   institutionName: string

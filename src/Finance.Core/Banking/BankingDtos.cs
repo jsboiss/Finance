@@ -1,6 +1,6 @@
 namespace Finance.Core.Banking;
 
-public sealed record AccountDto(Guid Id, string Name, string AccountNumber, string DisplayName, string InstitutionName, string Currency, long? CurrentBalanceMinorUnits);
+public sealed record AccountDto(Guid Id, string Name, string CustomName, string AccountNumber, string DisplayName, string InstitutionName, string Currency, long? CurrentBalanceMinorUnits);
 
 public sealed record BalanceDto(Guid AccountId, long? CurrentMinorUnits, string Currency, DateTimeOffset AsOf);
 
@@ -32,6 +32,8 @@ public sealed record CreateTransactionTagRequest(string Name, string? Color);
 public sealed record UpdateTransactionTagsRequest(IReadOnlyList<Guid> TagIds);
 
 public sealed record CreateMerchantTagRuleRequest(string MerchantName, Guid TagId);
+
+public sealed record UpdateAccountRequest(string? CustomName);
 
 public sealed record ImportRunDto(Guid Id, string Source, string Status, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, int ImportedCount, string? Error);
 
