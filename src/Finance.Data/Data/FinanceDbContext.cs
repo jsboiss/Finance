@@ -15,6 +15,9 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<TransactionTag> TransactionTags => Set<TransactionTag>();
     public DbSet<BankTransactionTag> BankTransactionTags => Set<BankTransactionTag>();
     public DbSet<MerchantTag> MerchantTags => Set<MerchantTag>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<SubscriptionTransaction> SubscriptionTransactions => Set<SubscriptionTransaction>();
+    public DbSet<SubscriptionSuggestion> SubscriptionSuggestions => Set<SubscriptionSuggestion>();
     public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
     public DbSet<ImportRun> ImportRuns => Set<ImportRun>();
     public DbSet<RedbarkRequestLog> RedbarkRequestLogs => Set<RedbarkRequestLog>();
@@ -44,6 +47,23 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         {
             x.HasIndex(y => new { y.TenantId, y.MerchantKey, y.TransactionTagId }).IsUnique();
             x.HasIndex(y => new { y.TenantId, y.TransactionTagId });
+        });
+        modelBuilder.Entity<Subscription>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.MerchantKey });
+            x.HasIndex(y => new { y.TenantId, y.StatusOverride });
+        });
+        modelBuilder.Entity<SubscriptionTransaction>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.SubscriptionId, y.BankTransactionId }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.BankTransactionId });
+        });
+        modelBuilder.Entity<SubscriptionSuggestion>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.Status });
+            x.HasIndex(y => new { y.TenantId, y.MerchantKey, y.Cadence, y.ExpectedAmountMinorUnits }).IsUnique();
+            x.Property(y => y.Status).HasDefaultValue("pending");
+            x.Property(y => y.PaymentManager).HasDefaultValue("direct");
         });
         modelBuilder.Entity<WebhookEvent>(x => x.HasIndex(y => new { y.TenantId, y.ExternalEventId }).IsUnique());
         modelBuilder.Entity<RedbarkRequestLog>(x => x.HasIndex(y => new { y.TenantId, y.RequestedAt }));

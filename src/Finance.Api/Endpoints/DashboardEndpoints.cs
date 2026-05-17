@@ -25,6 +25,15 @@ public static class DashboardEndpoints
         group.MapDelete("/merchant-tags/{ruleId:guid}", DeleteMerchantTagRule);
         group.MapGet("/imports", GetImports);
         group.MapGet("/operations/status", GetOperationsStatus);
+        group.MapGet("/subscriptions", GetSubscriptions);
+        group.MapGet("/subscriptions/{subscriptionId:guid}", GetSubscription);
+        group.MapPost("/subscriptions", CreateSubscription);
+        group.MapPut("/subscriptions/{subscriptionId:guid}", UpdateSubscription);
+        group.MapDelete("/subscriptions/{subscriptionId:guid}", DeleteSubscription);
+        group.MapGet("/subscription-suggestions", GetSubscriptionSuggestions);
+        group.MapPost("/subscription-suggestions/refresh", RefreshSubscriptionSuggestions);
+        group.MapPost("/subscription-suggestions/{suggestionId:guid}/accept", AcceptSubscriptionSuggestion);
+        group.MapPost("/subscription-suggestions/{suggestionId:guid}/dismiss", DismissSubscriptionSuggestion);
 
         return app;
     }
@@ -102,5 +111,53 @@ public static class DashboardEndpoints
     private static Task<OperationsStatusDto> GetOperationsStatus(IBankingQueries queries, CancellationToken cancellationToken)
     {
         return queries.GetOperationsStatus(cancellationToken);
+    }
+
+    private static Task<IReadOnlyList<SubscriptionDto>> GetSubscriptions(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetSubscriptions(cancellationToken);
+    }
+
+    private static async Task<Results<Ok<SubscriptionDetailDto>, NotFound>> GetSubscription(Guid subscriptionId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var subscription = await queries.GetSubscription(subscriptionId, cancellationToken);
+        return subscription is null ? TypedResults.NotFound() : TypedResults.Ok(subscription);
+    }
+
+    private static Task<SubscriptionDto> CreateSubscription(CreateSubscriptionRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.CreateSubscription(request, cancellationToken);
+    }
+
+    private static async Task<Results<Ok<SubscriptionDto>, NotFound>> UpdateSubscription(Guid subscriptionId, UpdateSubscriptionRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var subscription = await queries.UpdateSubscription(subscriptionId, request, cancellationToken);
+        return subscription is null ? TypedResults.NotFound() : TypedResults.Ok(subscription);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DeleteSubscription(Guid subscriptionId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return await queries.DeleteSubscription(subscriptionId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
+    }
+
+    private static Task<IReadOnlyList<SubscriptionSuggestionDto>> GetSubscriptionSuggestions(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetSubscriptionSuggestions(cancellationToken);
+    }
+
+    private static Task<IReadOnlyList<SubscriptionSuggestionDto>> RefreshSubscriptionSuggestions(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.RefreshSubscriptionSuggestions(cancellationToken);
+    }
+
+    private static async Task<Results<Ok<SubscriptionDto>, NotFound>> AcceptSubscriptionSuggestion(Guid suggestionId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var subscription = await queries.AcceptSubscriptionSuggestion(suggestionId, cancellationToken);
+        return subscription is null ? TypedResults.NotFound() : TypedResults.Ok(subscription);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DismissSubscriptionSuggestion(Guid suggestionId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return await queries.DismissSubscriptionSuggestion(suggestionId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 }

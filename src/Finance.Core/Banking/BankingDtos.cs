@@ -38,3 +38,48 @@ public sealed record ImportRunDto(Guid Id, string Source, string Status, DateTim
 public sealed record OperationsStatusDto(int RedbarkRequestsToday, int RedbarkRequestsThisMonth, int RedbarkRequestsTotal, DateTimeOffset? LastRedbarkRequestAt);
 
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
+
+public sealed record SubscriptionDto(
+    Guid Id,
+    string Name,
+    string MerchantName,
+    string MerchantKey,
+    string PaymentManager,
+    string Cadence,
+    long ExpectedAmountMinorUnits,
+    string Currency,
+    string Status,
+    string? StatusOverride,
+    bool IsCancelled,
+    DateOnly? FirstPaymentDate,
+    DateOnly? LastPaymentDate,
+    DateOnly? NextExpectedPaymentDate,
+    long TotalPaidMinorUnits,
+    long MonthlyEstimateMinorUnits,
+    long YearlyEstimateMinorUnits,
+    IReadOnlyList<SubscriptionPriceChangeDto> PriceChanges);
+
+public sealed record SubscriptionDetailDto(SubscriptionDto Subscription, IReadOnlyList<SubscriptionPaymentDto> Payments);
+
+public sealed record SubscriptionPaymentDto(Guid TransactionId, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
+
+public sealed record SubscriptionPriceChangeDto(DateOnly EffectiveDate, long PreviousAmountMinorUnits, long NewAmountMinorUnits, string Status);
+
+public sealed record SubscriptionSuggestionDto(
+    Guid Id,
+    string MerchantName,
+    string MerchantKey,
+    string PaymentManager,
+    string Cadence,
+    long ExpectedAmountMinorUnits,
+    string Currency,
+    int Confidence,
+    string Status,
+    DateOnly FirstPaymentDate,
+    DateOnly LastPaymentDate,
+    DateOnly NextExpectedPaymentDate,
+    IReadOnlyList<Guid> SampleTransactionIds);
+
+public sealed record CreateSubscriptionRequest(string Name, string MerchantName, string? PaymentManager, string Cadence, long ExpectedAmountMinorUnits, string Currency, string? StatusOverride, bool IsCancelled);
+
+public sealed record UpdateSubscriptionRequest(string Name, string MerchantName, string? PaymentManager, string Cadence, long ExpectedAmountMinorUnits, string Currency, string? StatusOverride, bool IsCancelled);

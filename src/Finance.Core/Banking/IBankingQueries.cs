@@ -27,4 +27,22 @@ public interface IBankingQueries
     Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken);
 
     Task<OperationsStatusDto> GetOperationsStatus(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SubscriptionDto>> GetSubscriptions(CancellationToken cancellationToken);
+
+    Task<SubscriptionDetailDto?> GetSubscription(Guid subscriptionId, CancellationToken cancellationToken);
+
+    Task<SubscriptionDto> CreateSubscription(CreateSubscriptionRequest request, CancellationToken cancellationToken);
+
+    Task<SubscriptionDto?> UpdateSubscription(Guid subscriptionId, UpdateSubscriptionRequest request, CancellationToken cancellationToken);
+
+    Task<bool> DeleteSubscription(Guid subscriptionId, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SubscriptionSuggestionDto>> GetSubscriptionSuggestions(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<SubscriptionSuggestionDto>> RefreshSubscriptionSuggestions(CancellationToken cancellationToken);
+
+    Task<SubscriptionDto?> AcceptSubscriptionSuggestion(Guid suggestionId, CancellationToken cancellationToken);
+
+    Task<bool> DismissSubscriptionSuggestion(Guid suggestionId, CancellationToken cancellationToken);
 }

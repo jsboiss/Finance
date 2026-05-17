@@ -63,3 +63,61 @@ export type OperationsStatus = {
   redbarkRequestsTotal: number
   lastRedbarkRequestAt?: string
 }
+
+export type Subscription = {
+  id: string
+  name: string
+  merchantName: string
+  merchantKey: string
+  paymentManager: string
+  cadence: string
+  expectedAmountMinorUnits: number
+  currency: string
+  status: string
+  statusOverride?: string
+  isCancelled: boolean
+  firstPaymentDate?: string
+  lastPaymentDate?: string
+  nextExpectedPaymentDate?: string
+  totalPaidMinorUnits: number
+  monthlyEstimateMinorUnits: number
+  yearlyEstimateMinorUnits: number
+  priceChanges: SubscriptionPriceChange[]
+}
+
+export type SubscriptionDetail = {
+  subscription: Subscription
+  payments: SubscriptionPayment[]
+}
+
+export type SubscriptionPayment = {
+  transactionId: string
+  description: string
+  merchantName?: string
+  amountMinorUnits: number
+  currency: string
+  postedDate: string
+}
+
+export type SubscriptionPriceChange = {
+  effectiveDate: string
+  previousAmountMinorUnits: number
+  newAmountMinorUnits: number
+  status: string
+}
+
+export type SubscriptionSuggestion = {
+  id: string
+  merchantName: string
+  merchantKey: string
+  paymentManager: string
+  cadence: string
+  expectedAmountMinorUnits: number
+  currency: string
+  confidence: number
+  status: string
+  firstPaymentDate: string
+  lastPaymentDate: string
+  nextExpectedPaymentDate: string
+  sampleTransactionIds: string[]
+}

@@ -115,6 +115,56 @@ public sealed class MerchantTag
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class Subscription
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = "";
+    public string MerchantName { get; set; } = "";
+    public string MerchantKey { get; set; } = "";
+    public string PaymentManager { get; set; } = "direct";
+    public string Cadence { get; set; } = "monthly";
+    public long ExpectedAmountMinorUnits { get; set; }
+    public string Currency { get; set; } = "AUD";
+    public string? StatusOverride { get; set; }
+    public bool IsCancelled { get; set; }
+    public DateOnly? FirstPaymentDate { get; set; }
+    public DateOnly? LastPaymentDate { get; set; }
+    public DateOnly? NextExpectedPaymentDate { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SubscriptionTransaction
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid SubscriptionId { get; set; }
+    public Guid BankTransactionId { get; set; }
+    public int MatchConfidence { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SubscriptionSuggestion
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string MerchantName { get; set; } = "";
+    public string MerchantKey { get; set; } = "";
+    public string PaymentManager { get; set; } = "direct";
+    public string Cadence { get; set; } = "monthly";
+    public long ExpectedAmountMinorUnits { get; set; }
+    public string Currency { get; set; } = "AUD";
+    public int Confidence { get; set; }
+    public string Status { get; set; } = "pending";
+    public string SampleTransactionIds { get; set; } = "[]";
+    public DateOnly FirstPaymentDate { get; set; }
+    public DateOnly LastPaymentDate { get; set; }
+    public DateOnly NextExpectedPaymentDate { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class WebhookEvent
 {
     public Guid Id { get; set; } = Guid.NewGuid();
