@@ -30,42 +30,56 @@ const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '
 const internalTransferTagName = 'Internal'
 
 export function Overview() {
-  const [cashFlowAccountId, setCashFlowAccountId] = useState('all')
+  const [overviewAccountId, setOverviewAccountId] = useState('all')
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const transactions = useQuery({ queryKey: ['transactions', 'overview'], queryFn: getOverviewTransactions })
-  const availableBalances = accounts.data?.filter(x => x.currentBalanceMinorUnits != null) ?? []
-  const totalBalance = availableBalances.length > 0 ? availableBalances.reduce((x, y) => x + (y.currentBalanceMinorUnits ?? 0), 0) : null
-  const analysis = useMemo(() => analyzeSpending(transactions.data ?? []), [transactions.data])
-  const cashFlow = useMemo(() => analyzeCashFlow(transactions.data ?? [], analysis.currentMonthKey, cashFlowAccountId), [transactions.data, analysis.currentMonthKey, cashFlowAccountId])
+  const scopedTransactions = useMemo(() => getScopedTransactions(transactions.data ?? [], overviewAccountId), [transactions.data, overviewAccountId])
+  const availableBalances = getScopedAccounts(accounts.data ?? [], overviewAccountId).filter(x => x.currentBalanceMinorUnits != null)
+  const balance = availableBalances.length > 0 ? availableBalances.reduce((x, y) => x + (y.currentBalanceMinorUnits ?? 0), 0) : null
+  const includeInternalTransfers = overviewAccountId !== 'all'
+  const analysis = useMemo(() => analyzeSpending(scopedTransactions, includeInternalTransfers), [scopedTransactions, includeInternalTransfers])
+  const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
+  const cashFlow = useMemo(() => analyzeCashFlow(scopedTransactions, analysis.currentMonthKey, overviewAccountId !== 'all'), [scopedTransactions, analysis.currentMonthKey, overviewAccountId])
+  const dailyCashFlow = useMemo(() => analyzeDailyCashFlow(scopedTransactions, analysis.currentMonthKey, includeInternalTransfers), [scopedTransactions, analysis.currentMonthKey, includeInternalTransfers])
 
   return (
     <section className="space-y-6">
-      <Header title="Overview" subtitle="Tagged spending patterns, trend changes, and unusually large transactions." />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <Header title="Overview" subtitle="Tagged spending patterns, trend changes, and unusually large transactions." />
+        <select
+          aria-label="Overview account"
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 sm:w-64"
+          onChange={x => setOverviewAccountId(x.target.value)}
+          value={overviewAccountId}
+        >
+          <option value="all">All accounts</option>
+          {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+        </select>
+      </div>
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Total balance" value={currency(totalBalance, 'AUD')} />
+        <Metric label={overviewAccountId === 'all' ? 'Total balance' : 'Account balance'} value={currency(balance, 'AUD')} />
         <Metric label="This month spent" value={currency(analysis.currentMonthSpend, 'AUD')} />
         <Metric label="Avg daily spend" value={currency(analysis.averageDailySpend, 'AUD')} />
         <Metric label="Tagged coverage" value={`${analysis.taggedCoverage}%`} />
       </div>
 
       <Card>
-        <CardHeader className="gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
-          <div>
-            <CardTitle>Cash flow race</CardTitle>
-            <CardDescription>{analysis.currentMonthLabel}</CardDescription>
-          </div>
-          <select
-            aria-label="Cash flow account"
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 sm:w-64"
-            onChange={x => setCashFlowAccountId(x.target.value)}
-            value={cashFlowAccountId}
-          >
-            <option value="all">All accounts</option>
-            {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
-          </select>
+        <CardHeader>
+          <CardTitle>Cash flow race</CardTitle>
+          <CardDescription>{analysis.currentMonthLabel}</CardDescription>
         </CardHeader>
         <CardContent>
           <CashFlowRace income={cashFlow.income} expenses={cashFlow.expenses} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Daily cash flow</CardTitle>
+          <CardDescription>{analysis.currentMonthLabel}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DailyCashFlowBars days={dailyCashFlow} />
         </CardContent>
       </Card>
 
@@ -85,7 +99,7 @@ export function Overview() {
             <CardDescription>{analysis.timeframeLabel}</CardDescription>
           </CardHeader>
           <CardContent>
-            <ParetoList tags={analysis.topTags} total={analysis.totalSpend} />
+            <ParetoList tags={largestCategoryTags} total={largestCategoryTags.reduce((x, y) => x + y.total, 0)} />
           </CardContent>
         </Card>
       </div>
@@ -93,9 +107,21 @@ export function Overview() {
   )
 }
 
-function analyzeSpending(transactions: Transaction[]) {
+function getScopedAccounts(accounts: Account[], accountId: string) {
+  return accountId === 'all' ? accounts : accounts.filter(x => x.id === accountId)
+}
+
+function getScopedTransactions(transactions: Transaction[], accountId: string) {
+  return accountId === 'all' ? transactions : transactions.filter(x => x.accountId === accountId)
+}
+
+function getLargestCategoryTags(tags: TagSpend[]) {
+  return tags.filter(x => x.name.toLowerCase() !== internalTransferTagName.toLowerCase() && x.id !== fallbackTag.id)
+}
+
+function analyzeSpending(transactions: Transaction[], includeInternalTransfers: boolean) {
   const posted = transactions.filter(x => x.status.toLowerCase() === 'posted')
-  const external = posted.filter(x => !hasInternalTransferTag(x))
+  const external = includeInternalTransfers ? posted : posted.filter(x => !hasInternalTransferTag(x))
   const expenses = external.filter(x => x.amountMinorUnits < 0)
   const income = external.filter(x => x.amountMinorUnits > 0)
   const monthKeys = [...new Set(expenses.map(x => x.postedDate.slice(0, 7)))].sort().slice(-6)
@@ -183,17 +209,52 @@ function getElapsedDaysInMonth(monthKey: string) {
   return new Date(year, month, 0).getDate()
 }
 
-function analyzeCashFlow(transactions: Transaction[], monthKey: string, accountId: string) {
+function analyzeCashFlow(transactions: Transaction[], monthKey: string, includeInternalTransfers: boolean) {
   const current = transactions.filter(x =>
     x.status.toLowerCase() === 'posted'
-    && !hasInternalTransferTag(x)
-    && x.postedDate.slice(0, 7) === monthKey
-    && (accountId === 'all' || x.accountId === accountId))
+    && (includeInternalTransfers || !hasInternalTransferTag(x))
+    && x.postedDate.slice(0, 7) === monthKey)
 
   return {
     income: current.filter(x => x.amountMinorUnits > 0).reduce((x, y) => x + y.amountMinorUnits, 0),
     expenses: current.filter(x => x.amountMinorUnits < 0).reduce((x, y) => x + Math.abs(y.amountMinorUnits), 0)
   }
+}
+
+function analyzeDailyCashFlow(transactions: Transaction[], monthKey: string, includeInternalTransfers: boolean) {
+  const [year, month] = monthKey.split('-').map(Number)
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const today = new Date()
+  const visibleDays = today.getFullYear() === year && today.getMonth() + 1 === month ? today.getDate() : daysInMonth
+  const days = Array.from({ length: visibleDays }, (_, x) => ({
+    key: `${monthKey}-${String(x + 1).padStart(2, '0')}`,
+    day: x + 1,
+    income: 0,
+    expenses: 0
+  }))
+  const dayMap = new Map(days.map(x => [x.key, x]))
+
+  const current = transactions.filter(x =>
+    x.status.toLowerCase() === 'posted'
+    && (includeInternalTransfers || !hasInternalTransferTag(x))
+    && x.postedDate.slice(0, 7) === monthKey)
+
+  for (const transaction of current) {
+    const day = dayMap.get(transaction.postedDate)
+    if (!day) {
+      continue
+    }
+
+    if (transaction.amountMinorUnits > 0) {
+      day.income += transaction.amountMinorUnits
+    }
+
+    if (transaction.amountMinorUnits < 0) {
+      day.expenses += Math.abs(transaction.amountMinorUnits)
+    }
+  }
+
+  return days
 }
 
 async function getOverviewTransactions() {
@@ -264,12 +325,12 @@ function StackedMonthlyBars({ months, tags }: { months: MonthSpend[]; tags: TagS
   return (
     <div className="space-y-4">
       <div className="grid h-72 items-end gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(months.length, 1)}, minmax(0, 1fr))` }}>
-        {months.map(x => (
+        {months.map((x, index) => (
           <div className="flex h-full flex-col justify-end gap-2" key={x.key}>
             <div className="relative flex h-full flex-col justify-end rounded-md border border-border bg-muted">
               {tags.map(y => {
                 const value = x.tags.get(y.id) ?? 0
-                return value > 0 ? <MonthlyBarSegment key={y.id} tag={y} value={value} max={max} /> : null
+                return value > 0 ? <MonthlyBarSegment isFirstMonth={index === 0} isLastMonth={index === months.length - 1} key={y.id} tag={y} value={value} max={max} /> : null
               })}
             </div>
             <div className="text-center">
@@ -284,10 +345,61 @@ function StackedMonthlyBars({ months, tags }: { months: MonthSpend[]; tags: TagS
   )
 }
 
-function MonthlyBarSegment({ tag, value, max }: { tag: TagSpend; value: number; max: number }) {
+function DailyCashFlowBars({ days }: { days: { key: string; day: number; income: number; expenses: number }[] }) {
+  const max = Math.max(...days.map(x => x.income + x.expenses), 1)
+  return (
+    <div className="space-y-4">
+      <div className="grid h-80 items-end gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(days.length, 1)}, minmax(0, 1fr))` }}>
+        {days.map((x, index) => {
+          const incomeHeight = (x.income / max) * 100
+          const expenseHeight = (x.expenses / max) * 100
+          const tooltipPosition = index === 0
+            ? 'left-0'
+            : index === days.length - 1
+              ? 'right-0'
+              : 'left-1/2 -translate-x-1/2'
+          return (
+            <div className="group relative flex h-full min-w-0 flex-col justify-end gap-1" key={x.key}>
+              <div className="flex h-full flex-col justify-end overflow-hidden rounded-sm border border-border bg-muted">
+                {x.income > 0 && <div className="shrink-0 bg-[oklch(0.62_0.14_160)]" style={{ height: `${Math.max(incomeHeight, 3)}%` }} />}
+                {x.expenses > 0 && <div className="shrink-0 bg-[oklch(0.66_0.19_27)]" style={{ height: `${Math.max(expenseHeight, 3)}%` }} />}
+                <div className={`pointer-events-none absolute top-1/2 z-10 hidden min-w-40 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${tooltipPosition}`}>
+                  <p className="font-medium">Day {x.day}</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[oklch(0.62_0.14_160)]" />
+                    <span>Income</span>
+                    <span className="ml-auto font-semibold">{currency(x.income, 'AUD')}</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[oklch(0.66_0.19_27)]" />
+                    <span>Spend</span>
+                    <span className="ml-auto font-semibold">{currency(x.expenses, 'AUD')}</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-center text-[10px] text-muted-foreground">{x.day}</p>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.14_160)]" />Income</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.66_0.19_27)]" />Spend</span>
+      </div>
+    </div>
+  )
+}
+
+function MonthlyBarSegment({ isFirstMonth, isLastMonth, tag, value, max }: { isFirstMonth: boolean; isLastMonth: boolean; tag: TagSpend; value: number; max: number }) {
+  const tooltipPosition = isFirstMonth
+    ? 'left-0'
+    : isLastMonth
+      ? 'right-0'
+      : 'left-1/2 -translate-x-1/2'
+
   return (
     <div className="group relative" style={{ backgroundColor: tag.color, height: `${Math.max((value / max) * 100, 3)}%` }}>
-      <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 hidden min-w-36 -translate-x-1/2 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block">
+      <div className={`pointer-events-none absolute top-1/2 z-10 hidden min-w-36 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${tooltipPosition}`}>
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
           <span className="truncate font-medium">{tag.name}</span>
