@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Activity, Banknote, CircleDollarSign, ReceiptText, RefreshCcw, Search } from 'lucide-react'
+import { Activity, Banknote, CircleDollarSign, ReceiptText, RefreshCcw, Search, Settings as SettingsIcon } from 'lucide-react'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { NavLink } from './NavLink'
 
@@ -20,6 +20,7 @@ export function Shell() {
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />
           <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
+          <NavLink to="/settings" icon={<SettingsIcon className="size-4" />} label="Settings" />
         </nav>
       </aside>
       <header className="border-b border-border bg-card lg:hidden">
@@ -36,6 +37,7 @@ export function Shell() {
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />
           <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
+          <NavLink to="/settings" icon={<SettingsIcon className="size-4" />} label="Settings" />
         </nav>
       </header>
       <main className="lg:pl-64">

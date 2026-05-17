@@ -3,6 +3,7 @@ import { Shell } from './layout/Shell'
 import { Accounts } from './pages/Accounts'
 import { Imports } from './pages/Imports'
 import { Overview } from './pages/Overview'
+import { Settings } from './pages/Settings'
 import { Subscriptions } from './pages/Subscriptions'
 import { Transactions } from './pages/Transactions'
 
@@ -12,8 +13,9 @@ const accountsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/acc
 const transactionsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/transactions', component: Transactions })
 const subscriptionsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/subscriptions', component: Subscriptions })
 const importsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/imports', component: Imports })
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: Settings })
 
-export const router = createRouter({ routeTree: rootRoute.addChildren([indexRoute, accountsRoute, transactionsRoute, subscriptionsRoute, importsRoute]) })
+export const router = createRouter({ routeTree: rootRoute.addChildren([indexRoute, accountsRoute, transactionsRoute, subscriptionsRoute, importsRoute, settingsRoute]) })
 
 declare module '@tanstack/react-router' {
   interface Register {

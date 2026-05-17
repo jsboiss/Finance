@@ -1,9 +1,14 @@
 namespace Finance.Api.Endpoints;
 
+using System.Security.Cryptography;
 using Finance.Api.Auth;
+using Finance.Core.Abstractions;
+using Finance.Core.Auth;
 using Finance.Core.Banking;
+using Finance.Data.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 
 public static class DashboardEndpoints
 {
@@ -35,6 +40,9 @@ public static class DashboardEndpoints
         group.MapPost("/subscription-suggestions/refresh", RefreshSubscriptionSuggestions);
         group.MapPost("/subscription-suggestions/{suggestionId:guid}/accept", AcceptSubscriptionSuggestion);
         group.MapPost("/subscription-suggestions/{suggestionId:guid}/dismiss", DismissSubscriptionSuggestion);
+        group.MapGet("/api-clients", GetApiClients);
+        group.MapPost("/api-clients", CreateApiClient);
+        group.MapDelete("/api-clients/{apiClientId:guid}", RevokeApiClient);
 
         return app;
     }
@@ -167,4 +175,58 @@ public static class DashboardEndpoints
     {
         return await queries.DismissSubscriptionSuggestion(suggestionId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
+
+    private static async Task<IReadOnlyList<ApiClientDto>> GetApiClients(FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    {
+        return await dbContext.ApiClients
+            .Where(x => x.TenantId == tenantContext.TenantId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new ApiClientDto(x.Id, x.Name, x.CreatedAt, x.RevokedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<CreateApiClientResponse> CreateApiClient(CreateApiClientRequest request, FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    {
+        var name = string.IsNullOrWhiteSpace(request.Name) ? "External UI" : request.Name.Trim();
+        var apiKey = GenerateApiKey();
+        var apiClient = new ApiClient
+        {
+            TenantId = tenantContext.TenantId,
+            Name = name,
+            KeyHash = ApiKeyHasher.Hash(apiKey)
+        };
+
+        dbContext.ApiClients.Add(apiClient);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new CreateApiClientResponse(new ApiClientDto(apiClient.Id, apiClient.Name, apiClient.CreatedAt, apiClient.RevokedAt), apiKey);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> RevokeApiClient(Guid apiClientId, FinanceDbContext dbContext, ITenantContext tenantContext, CancellationToken cancellationToken)
+    {
+        var apiClient = await dbContext.ApiClients.FirstOrDefaultAsync(x => x.TenantId == tenantContext.TenantId && x.Id == apiClientId, cancellationToken);
+        if (apiClient is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        apiClient.RevokedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return TypedResults.NoContent();
+    }
+
+    private static string GenerateApiKey()
+    {
+        return $"fin_{Base64UrlEncode(RandomNumberGenerator.GetBytes(32))}";
+    }
+
+    private static string Base64UrlEncode(byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private sealed record ApiClientDto(Guid Id, string Name, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
+
+    private sealed record CreateApiClientRequest(string? Name);
+
+    private sealed record CreateApiClientResponse(ApiClientDto Client, string ApiKey);
 }

@@ -122,3 +122,15 @@ export type SubscriptionSuggestion = {
   nextExpectedPaymentDate: string
   sampleTransactionIds: string[]
 }
+
+export type ApiClient = {
+  id: string
+  name: string
+  createdAt: string
+  revokedAt?: string
+}
+
+export type CreateApiClientResponse = {
+  client: ApiClient
+  apiKey: string
+}
