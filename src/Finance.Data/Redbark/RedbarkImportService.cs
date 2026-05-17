@@ -8,9 +8,19 @@ using Microsoft.EntityFrameworkCore;
 
 public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkClient redbarkClient) : IRedbarkImportService
 {
+    public Task DiscoverAccounts(Guid tenantId, CancellationToken cancellationToken)
+    {
+        return ImportAccounts(tenantId, cancellationToken);
+    }
+
     public Task Backfill(Guid tenantId, CancellationToken cancellationToken)
     {
         return ImportRange(tenantId, DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-24)), DateOnly.FromDateTime(DateTime.UtcNow), "backfill", cancellationToken);
+    }
+
+    public Task BackfillAccount(Guid tenantId, Guid accountId, CancellationToken cancellationToken)
+    {
+        return ImportAccountRange(tenantId, accountId, DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-24)), DateOnly.FromDateTime(DateTime.UtcNow), "account-backfill", cancellationToken);
     }
 
     public Task ReconcileRecent(Guid tenantId, CancellationToken cancellationToken)
@@ -80,6 +90,110 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
                         await UpsertBalance(tenantId, bankAccount.Id, balance, cancellationToken);
                     }
                 }
+            }
+
+            run.ImportedCount = importedCount;
+            run.Status = "completed";
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            run.Status = "failed";
+            run.Error = ex.Message;
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private async Task ImportAccounts(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var run = new ImportRun { TenantId = tenantId, Source = "account-discovery" };
+        dbContext.ImportRuns.Add(run);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
+
+        try
+        {
+            var importedCount = 0;
+            var connections = await redbarkClient.GetConnections(tenantId, cancellationToken);
+            foreach (var connection in connections)
+            {
+                var bankConnection = await UpsertConnection(tenantId, connection, cancellationToken);
+                var accounts = await redbarkClient.GetAccounts(tenantId, connection.Id, cancellationToken);
+                var bankAccountsByExternalId = new Dictionary<string, BankAccount>();
+                foreach (var account in accounts)
+                {
+                    var bankAccount = await UpsertAccount(tenantId, bankConnection.Id, account, cancellationToken);
+                    bankAccountsByExternalId[account.Id] = bankAccount;
+                    importedCount++;
+                }
+
+                var balances = await redbarkClient.GetBalances(tenantId, accounts.Select(x => x.Id).ToList(), cancellationToken);
+                foreach (var balance in balances)
+                {
+                    if (bankAccountsByExternalId.TryGetValue(balance.AccountId, out var bankAccount))
+                    {
+                        await UpsertBalance(tenantId, bankAccount.Id, balance, cancellationToken);
+                    }
+                }
+            }
+
+            run.ImportedCount = importedCount;
+            run.Status = "completed";
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            run.Status = "failed";
+            run.Error = ex.Message;
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private async Task ImportAccountRange(Guid tenantId, Guid accountId, DateOnly from, DateOnly to, string source, CancellationToken cancellationToken)
+    {
+        var run = new ImportRun { TenantId = tenantId, Source = source };
+        dbContext.ImportRuns.Add(run);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
+
+        try
+        {
+            var account = await dbContext.BankAccounts
+                .Join(dbContext.BankConnections.Where(x => x.TenantId == tenantId),
+                    x => x.BankConnectionId,
+                    y => y.Id,
+                    (x, y) => new { Account = x, Connection = y })
+                .FirstOrDefaultAsync(x => x.Account.TenantId == tenantId && x.Account.Id == accountId, cancellationToken);
+
+            if (account is null)
+            {
+                throw new InvalidOperationException("Account was not found for this tenant. Run account discovery first.");
+            }
+
+            var importedCount = 0;
+            string? cursor = null;
+            do
+            {
+                var page = await redbarkClient.GetTransactions(tenantId, account.Connection.ExternalConnectionId, account.Account.ExternalAccountId, from, to, cursor, cancellationToken);
+                foreach (var transaction in page.Transactions.Where(x => x.Status.Equals("posted", StringComparison.OrdinalIgnoreCase)))
+                {
+                    importedCount += await UpsertTransaction(tenantId, account.Account.Id, transaction, cancellationToken) ? 1 : 0;
+                }
+
+                cursor = page.NextCursor;
+            }
+            while (!string.IsNullOrWhiteSpace(cursor));
+
+            var balances = await redbarkClient.GetBalances(tenantId, [account.Account.ExternalAccountId], cancellationToken);
+            foreach (var balance in balances)
+            {
+                await UpsertBalance(tenantId, account.Account.Id, balance, cancellationToken);
             }
 
             run.ImportedCount = importedCount;

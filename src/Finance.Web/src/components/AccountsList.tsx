@@ -1,9 +1,25 @@
-import { Check, Pencil, X } from 'lucide-react'
+import { Check, DatabaseZap, Pencil, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { currency } from '../lib/format'
 import type { Account } from '../lib/types'
 
-export function AccountsList({ accounts, isLoading, isSaving, onRename }: { accounts: Account[]; isLoading: boolean; isSaving: boolean; onRename: (accountId: string, customName: string) => void }) {
+export function AccountsList({
+  accounts,
+  isLoading,
+  isSaving,
+  isOperating,
+  onRename,
+  onSync,
+  onClear
+}: {
+  accounts: Account[]
+  isLoading: boolean
+  isSaving: boolean
+  isOperating: boolean
+  onRename: (accountId: string, customName: string) => void
+  onSync: (accountId: string) => void
+  onClear: (accountId: string, displayName: string) => void
+}) {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
   const [customName, setCustomName] = useState('')
 
@@ -65,7 +81,15 @@ export function AccountsList({ accounts, isLoading, isSaving, onRename }: { acco
               </div>
             )}
           </div>
-          <p className="text-xl font-semibold md:text-right">{currency(account.currentBalanceMinorUnits, account.currency)}</p>
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <p className="mr-2 text-xl font-semibold">{currency(account.currentBalanceMinorUnits, account.currency)}</p>
+            <button aria-label={`Sync ${account.displayName}`} className="inline-flex size-9 items-center justify-center rounded-md border border-input hover:bg-muted disabled:opacity-50" disabled={isOperating} onClick={() => onSync(account.id)} type="button">
+              <DatabaseZap className="size-4" />
+            </button>
+            <button aria-label={`Clear imported data for ${account.displayName}`} className="inline-flex size-9 items-center justify-center rounded-md border border-input text-destructive hover:bg-destructive/10 disabled:opacity-50" disabled={isOperating} onClick={() => onClear(account.id, account.displayName)} type="button">
+              <Trash2 className="size-4" />
+            </button>
+          </div>
         </div>
       ))}
       {!isLoading && accounts.length === 0 && <p className="text-sm text-muted-foreground">No accounts imported yet.</p>}

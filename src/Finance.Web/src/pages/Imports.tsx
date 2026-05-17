@@ -11,6 +11,7 @@ export function Imports() {
   const queryClient = useQueryClient()
   const imports = useQuery({ queryKey: ['imports'], queryFn: () => api<ImportRun[]>('/api/imports') })
   const status = useQuery({ queryKey: ['operations-status'], queryFn: () => api<OperationsStatus>('/api/operations/status') })
+  const discoverAccounts = useOperation('/api/operations/accounts/discover', queryClient)
   const backfill = useOperation('/api/operations/backfill', queryClient)
   const reconcile = useOperation('/api/operations/reconcile', queryClient)
   const reconcileFull = useOperation('/api/operations/reconcile/full', queryClient)
@@ -19,7 +20,7 @@ export function Imports() {
     onSuccess: () => invalidateOperationalData(queryClient)
   })
 
-  const isRunning = backfill.isPending || reconcile.isPending || reconcileFull.isPending || clearData.isPending
+  const isRunning = discoverAccounts.isPending || backfill.isPending || reconcile.isPending || reconcileFull.isPending || clearData.isPending
 
   function onClearData() {
     if (window.confirm('Clear all imported banking data, import history, and Redbark request counters?')) {
@@ -41,6 +42,10 @@ export function Imports() {
           <RefreshCcw data-icon="inline-start" />
           Run recent recon
         </Button>
+        <Button disabled={isRunning} onClick={() => discoverAccounts.mutate()} variant="secondary">
+          <DatabaseZap data-icon="inline-start" />
+          Discover accounts
+        </Button>
         <Button disabled={isRunning} onClick={() => reconcileFull.mutate()} variant="secondary">
           <RotateCcw data-icon="inline-start" />
           Run full recon
@@ -54,7 +59,7 @@ export function Imports() {
           Clear data
         </Button>
       </div>
-      {(backfill.error || reconcile.error || reconcileFull.error || clearData.error) && (
+      {(discoverAccounts.error || backfill.error || reconcile.error || reconcileFull.error || clearData.error) && (
         <p className="text-sm text-destructive">Operation failed. Check the API logs for the Redbark error details.</p>
       )}
       <div className="grid gap-3">
