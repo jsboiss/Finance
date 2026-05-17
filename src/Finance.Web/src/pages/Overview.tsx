@@ -1,5 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import type React from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { CircleDollarSign, ReceiptText } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Metric } from '../components/Metric'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -27,11 +29,13 @@ type TagSpend = {
 const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '#94a3b8' }
 
 export function Overview() {
+  const [cashFlowAccountId, setCashFlowAccountId] = useState('all')
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
-  const transactions = useQuery({ queryKey: ['transactions', 'overview'], queryFn: () => api<Transaction[]>('/api/transactions?pageSize=1000&sort=postedDate_desc') })
+  const transactions = useQuery({ queryKey: ['transactions', 'overview'], queryFn: getOverviewTransactions })
   const availableBalances = accounts.data?.filter(x => x.currentBalanceMinorUnits != null) ?? []
   const totalBalance = availableBalances.length > 0 ? availableBalances.reduce((x, y) => x + (y.currentBalanceMinorUnits ?? 0), 0) : null
   const analysis = useMemo(() => analyzeSpending(transactions.data ?? []), [transactions.data])
+  const cashFlow = useMemo(() => analyzeCashFlow(transactions.data ?? [], analysis.currentMonthKey, cashFlowAccountId), [transactions.data, analysis.currentMonthKey, cashFlowAccountId])
 
   return (
     <section className="space-y-6">
@@ -42,6 +46,27 @@ export function Overview() {
         <Metric label="Month change" value={formatSignedCurrency(analysis.monthChange, 'AUD')} />
         <Metric label="Tagged coverage" value={`${analysis.taggedCoverage}%`} />
       </div>
+
+      <Card>
+        <CardHeader className="gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+          <div>
+            <CardTitle>Cash flow race</CardTitle>
+            <CardDescription>{analysis.currentMonthLabel}</CardDescription>
+          </div>
+          <select
+            aria-label="Cash flow account"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 sm:w-64"
+            onChange={x => setCashFlowAccountId(x.target.value)}
+            value={cashFlowAccountId}
+          >
+            <option value="all">All accounts</option>
+            {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+          </select>
+        </CardHeader>
+        <CardContent>
+          <CashFlowRace income={cashFlow.income} expenses={cashFlow.expenses} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Card>
@@ -55,7 +80,7 @@ export function Overview() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Largest categories</CardTitle>
+            <CardTitle>Largest spending categories</CardTitle>
             <CardDescription>{analysis.timeframeLabel}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -68,7 +93,9 @@ export function Overview() {
 }
 
 function analyzeSpending(transactions: Transaction[]) {
-  const expenses = transactions.filter(x => x.amountMinorUnits < 0 && x.status.toLowerCase() === 'posted')
+  const posted = transactions.filter(x => x.status.toLowerCase() === 'posted')
+  const expenses = posted.filter(x => x.amountMinorUnits < 0)
+  const income = posted.filter(x => x.amountMinorUnits > 0)
   const monthKeys = [...new Set(expenses.map(x => x.postedDate.slice(0, 7)))].sort().slice(-6)
   const months: MonthSpend[] = monthKeys.map(x => ({
     key: x,
@@ -83,8 +110,15 @@ function analyzeSpending(transactions: Transaction[]) {
   for (const transaction of expenses) {
     const amount = Math.abs(transaction.amountMinorUnits)
     const tags = transaction.tags.length > 0 ? transaction.tags : [fallbackTag]
+    const tagAmount = amount / tags.length
+    const month = monthMap.get(transaction.postedDate.slice(0, 7))
+    const monthIndex = monthKeys.indexOf(transaction.postedDate.slice(0, 7))
     if (transaction.tags.length > 0) {
       taggedCount += 1
+    }
+
+    if (month && monthIndex >= 0) {
+      month.total += amount
     }
 
     for (const tag of tags) {
@@ -101,14 +135,11 @@ function analyzeSpending(transactions: Transaction[]) {
       }
 
       const tagSpend = tagMap.get(tag.id)!
-      const month = monthMap.get(transaction.postedDate.slice(0, 7))
-      const monthIndex = monthKeys.indexOf(transaction.postedDate.slice(0, 7))
-      tagSpend.total += amount
+      tagSpend.total += tagAmount
 
       if (month && monthIndex >= 0) {
-        month.total += amount
-        month.tags.set(tag.id, (month.tags.get(tag.id) ?? 0) + amount)
-        tagSpend.months[monthIndex] += amount
+        month.tags.set(tag.id, (month.tags.get(tag.id) ?? 0) + tagAmount)
+        tagSpend.months[monthIndex] += tagAmount
       }
     }
   }
@@ -121,15 +152,94 @@ function analyzeSpending(transactions: Transaction[]) {
 
   const currentMonthSpend = months.at(-1)?.total ?? 0
   const previousMonthSpend = months.at(-2)?.total ?? 0
+  const currentMonthKey = months.at(-1)?.key ?? new Date().toISOString().slice(0, 7)
+  const currentMonthIncome = income
+    .filter(x => x.postedDate.slice(0, 7) === currentMonthKey)
+    .reduce((x, y) => x + y.amountMinorUnits, 0)
+
   return {
     months,
     topTags: topTags.slice(0, 8),
     totalSpend: topTags.reduce((x, y) => x + y.total, 0),
+    currentMonthIncome,
+    currentMonthKey,
     currentMonthSpend,
+    currentMonthLabel: formatFullMonthLabel(currentMonthKey),
     monthChange: currentMonthSpend - previousMonthSpend,
     taggedCoverage: expenses.length > 0 ? Math.round((taggedCount / expenses.length) * 100) : 0,
     timeframeLabel: getTimeframeLabel(months)
   }
+}
+
+function analyzeCashFlow(transactions: Transaction[], monthKey: string, accountId: string) {
+  const current = transactions.filter(x =>
+    x.status.toLowerCase() === 'posted'
+    && x.postedDate.slice(0, 7) === monthKey
+    && (accountId === 'all' || x.accountId === accountId))
+
+  return {
+    income: current.filter(x => x.amountMinorUnits > 0).reduce((x, y) => x + y.amountMinorUnits, 0),
+    expenses: current.filter(x => x.amountMinorUnits < 0).reduce((x, y) => x + Math.abs(y.amountMinorUnits), 0)
+  }
+}
+
+async function getOverviewTransactions() {
+  const pageSize = 200
+  const pages: Transaction[][] = []
+
+  for (let page = 1; page <= 20; page += 1) {
+    const transactions = await api<Transaction[]>(`/api/transactions?page=${page}&pageSize=${pageSize}&sort=postedDate_desc`)
+    pages.push(transactions)
+
+    if (transactions.length < pageSize) {
+      break
+    }
+  }
+
+  return pages.flat()
+}
+
+function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {
+  const total = Math.max(income + expenses, 1)
+  const incomeShare = (income / total) * 100
+  const expenseShare = (expenses / total) * 100
+  const net = income - expenses
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+        <CashFlowSide align="left" color="oklch(0.62 0.14 160)" icon={<CircleDollarSign className="h-4 w-4" />} label="Income" value={currency(income, 'AUD')} />
+        <div className="rounded-lg border border-border bg-muted px-4 py-3 text-center sm:min-w-44">
+          <p className={net >= 0 ? 'mt-1 text-2xl font-semibold text-primary' : 'mt-1 text-2xl font-semibold text-destructive'}>
+            {formatSignedCurrency(net, 'AUD')}
+          </p>
+        </div>
+        <CashFlowSide align="right" color="oklch(0.66 0.19 27)" icon={<ReceiptText className="h-4 w-4" />} label="Expenses" value={currency(expenses, 'AUD')} />
+      </div>
+      <div className="relative h-12 overflow-hidden rounded-full border border-border bg-muted">
+        <div className="absolute inset-y-1 left-1 rounded-l-full transition-all" style={{ width: `calc(${incomeShare}% - 0.25rem)`, backgroundColor: 'oklch(0.62 0.14 160)' }} />
+        <div className="absolute inset-y-1 right-1 rounded-r-full transition-all" style={{ width: `calc(${expenseShare}% - 0.25rem)`, backgroundColor: 'oklch(0.66 0.19 27)' }} />
+        <div className="absolute inset-y-0 w-px bg-card shadow-[0_0_0_1px_var(--border)] transition-all" style={{ left: `${incomeShare}%` }} />
+        <div className="absolute inset-y-0 flex -translate-x-1/2 items-center transition-all" style={{ left: `${incomeShare}%` }}>
+          <span className="rounded-full border border-border bg-card px-2 py-1 text-xs font-semibold shadow-sm">VS</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CashFlowSide({ align, color, icon, label, value }: { align: 'left' | 'right'; color: string; icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className={align === 'left' ? 'flex items-center gap-3' : 'flex items-center gap-3 sm:flex-row-reverse sm:text-right'}>
+      <div className="flex min-w-0 items-center gap-2 font-medium">
+        <span className="flex h-8 w-8 items-center justify-center rounded-md text-white" style={{ backgroundColor: color }}>
+          {icon}
+        </span>
+        <span>{label}</span>
+      </div>
+      <p className="shrink-0 font-semibold">{value}</p>
+    </div>
+  )
 }
 
 function StackedMonthlyBars({ months, tags }: { months: MonthSpend[]; tags: TagSpend[] }) {
@@ -172,11 +282,12 @@ function MonthlyBarSegment({ tag, value, max }: { tag: TagSpend; value: number; 
 }
 
 function ParetoList({ tags, total }: { tags: TagSpend[]; total: number }) {
-  let cumulative = 0
-  return <div className="space-y-3">{tags.map(x => {
-    cumulative += x.total
-    return <ProgressRow key={x.id} color={x.color} label={x.name} value={currency(x.total, 'AUD')} width={total > 0 ? x.total / total : 0} detail={`${Math.round((cumulative / Math.max(total, 1)) * 100)}% cumulative`} />
-  })}</div>
+  const rows = tags.reduce<{ tag: TagSpend; cumulative: number }[]>((x, y) => {
+    const previous = x.at(-1)?.cumulative ?? 0
+    return [...x, { tag: y, cumulative: previous + y.total }]
+  }, [])
+
+  return <div className="space-y-3">{rows.map(x => <ProgressRow key={x.tag.id} color={x.tag.color} label={x.tag.name} value={currency(x.tag.total, 'AUD')} width={total > 0 ? x.tag.total / total : 0} detail={`${Math.round((x.cumulative / Math.max(total, 1)) * 100)}% cumulative`} />)}</div>
 }
 
 function ProgressRow({ color, label, value, width, detail, icon }: { color: string; label: string; value: string; width: number; detail: string; icon?: React.ReactNode }) {
@@ -207,6 +318,10 @@ function TagLegend({ tags }: { tags: Pick<TagSpend, 'id' | 'name' | 'color'>[] }
 
 function formatMonthLabel(monthKey: string) {
   return new Date(`${monthKey}-02T00:00:00`).toLocaleDateString(undefined, { month: 'short' })
+}
+
+function formatFullMonthLabel(monthKey: string) {
+  return new Date(`${monthKey}-02T00:00:00`).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
 function getTimeframeLabel(months: MonthSpend[]) {
