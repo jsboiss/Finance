@@ -20,7 +20,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
     public Task BackfillAccount(Guid tenantId, Guid accountId, CancellationToken cancellationToken)
     {
-        return ImportAccountRange(tenantId, accountId, DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-24)), DateOnly.FromDateTime(DateTime.UtcNow), "account-backfill", cancellationToken);
+        return ImportAccountRange(tenantId, accountId, DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-24)), DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
     }
 
     public Task ReconcileRecent(Guid tenantId, CancellationToken cancellationToken)
@@ -155,9 +155,9 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         }
     }
 
-    private async Task ImportAccountRange(Guid tenantId, Guid accountId, DateOnly from, DateOnly to, string source, CancellationToken cancellationToken)
+    private async Task ImportAccountRange(Guid tenantId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)
     {
-        var run = new ImportRun { TenantId = tenantId, Source = source };
+        var run = new ImportRun { TenantId = tenantId, Source = "account-backfill" };
         dbContext.ImportRuns.Add(run);
         await dbContext.SaveChangesAsync(cancellationToken);
         await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
@@ -175,6 +175,9 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             {
                 throw new InvalidOperationException("Account was not found for this tenant. Run account discovery first.");
             }
+
+            run.Source = $"account-backfill: {GetAccountDisplayName(account.Account)}";
+            await dbContext.SaveChangesAsync(cancellationToken);
 
             var importedCount = 0;
             string? cursor = null;
@@ -209,6 +212,12 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static string GetAccountDisplayName(BankAccount account)
+    {
+        var name = string.IsNullOrWhiteSpace(account.CustomName) ? account.Name : account.CustomName;
+        return string.IsNullOrWhiteSpace(account.AccountNumber) ? name : $"{name} - {account.AccountNumber}";
     }
 
     private async Task<BankConnection> UpsertConnection(Guid tenantId, RedbarkConnectionDto connection, CancellationToken cancellationToken)

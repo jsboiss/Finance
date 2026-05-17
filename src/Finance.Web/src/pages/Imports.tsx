@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { DatabaseZap, RefreshCcw, RotateCcw, Trash2 } from 'lucide-react'
+import { Activity, DatabaseZap, RefreshCcw, RotateCcw, Trash2 } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -9,8 +9,8 @@ import type { ImportRun, OperationsStatus } from '../lib/types'
 
 export function Imports() {
   const queryClient = useQueryClient()
-  const imports = useQuery({ queryKey: ['imports'], queryFn: () => api<ImportRun[]>('/api/imports') })
-  const status = useQuery({ queryKey: ['operations-status'], queryFn: () => api<OperationsStatus>('/api/operations/status') })
+  const imports = useQuery({ queryKey: ['imports'], queryFn: () => api<ImportRun[]>('/api/imports'), refetchInterval: x => hasRunningImport(x.state.data) ? 3000 : false })
+  const status = useQuery({ queryKey: ['operations-status'], queryFn: () => api<OperationsStatus>('/api/operations/status'), refetchInterval: imports.data?.some(x => x.status === 'running') ? 3000 : false })
   const discoverAccounts = useOperation('/api/operations/accounts/discover', queryClient)
   const backfill = useOperation('/api/operations/backfill', queryClient)
   const reconcile = useOperation('/api/operations/reconcile', queryClient)
@@ -21,6 +21,13 @@ export function Imports() {
   })
 
   const isRunning = discoverAccounts.isPending || backfill.isPending || reconcile.isPending || reconcileFull.isPending || clearData.isPending
+  const activeOperation = getActiveOperation([
+    [discoverAccounts.isPending, 'Discovering accounts'],
+    [backfill.isPending, 'Running data sync'],
+    [reconcile.isPending, 'Running recent recon'],
+    [reconcileFull.isPending, 'Running full recon'],
+    [clearData.isPending, 'Clearing data']
+  ])
 
   function onClearData() {
     if (window.confirm('Clear all imported banking data, import history, and Redbark request counters?')) {
@@ -37,22 +44,28 @@ export function Imports() {
         <RequestMetric label="Total" value={status.data?.redbarkRequestsTotal} />
         <RequestMetric label="Last request" value={status.data?.lastRedbarkRequestAt ? new Date(status.data.lastRedbarkRequestAt).toLocaleString() : 'Never'} />
       </div>
+      {(activeOperation || imports.data?.some(x => x.status === 'running')) && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+          <Activity className="size-4 animate-pulse text-foreground" />
+          <span>{activeOperation ?? 'Sync is still running'}. This page refreshes status automatically.</span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button disabled={isRunning} onClick={() => reconcile.mutate()}>
           <RefreshCcw data-icon="inline-start" />
-          Run recent recon
+          {reconcile.isPending ? 'Running recent recon' : 'Run recent recon'}
         </Button>
         <Button disabled={isRunning} onClick={() => discoverAccounts.mutate()} variant="secondary">
           <DatabaseZap data-icon="inline-start" />
-          Discover accounts
+          {discoverAccounts.isPending ? 'Discovering accounts' : 'Discover accounts'}
         </Button>
         <Button disabled={isRunning} onClick={() => reconcileFull.mutate()} variant="secondary">
           <RotateCcw data-icon="inline-start" />
-          Run full recon
+          {reconcileFull.isPending ? 'Running full recon' : 'Run full recon'}
         </Button>
         <Button disabled={isRunning} onClick={() => backfill.mutate()} variant="outline">
           <DatabaseZap data-icon="inline-start" />
-          Run data sync
+          {backfill.isPending ? 'Running data sync' : 'Run data sync'}
         </Button>
         <Button disabled={isRunning} onClick={onClearData} variant="destructive">
           <Trash2 data-icon="inline-start" />
@@ -70,7 +83,7 @@ export function Imports() {
                 <p className="font-medium">{x.source}</p>
                 <p className="text-sm text-muted-foreground">{new Date(x.startedAt).toLocaleString()}</p>
               </div>
-              <Badge variant="secondary">{x.status}</Badge>
+            <Badge variant={x.status === 'failed' ? 'destructive' : 'secondary'}>{x.status}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">{x.importedCount} transactions imported</p>
             {x.error && <p className="mt-3 text-sm text-destructive">{x.error}</p>}
@@ -80,6 +93,14 @@ export function Imports() {
       </div>
     </section>
   )
+}
+
+function hasRunningImport(imports: ImportRun[] | undefined) {
+  return imports?.some(x => x.status === 'running') ?? false
+}
+
+function getActiveOperation(operations: Array<[boolean, string]>) {
+  return operations.find(x => x[0])?.[1]
 }
 
 function useOperation(path: string, queryClient: ReturnType<typeof useQueryClient>) {
