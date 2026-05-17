@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, type ColumnFiltersState, useReactTable } from '@tanstack/react-table'
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Header } from '../components/Header'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { MerchantTagRule, Transaction, TransactionTag } from '../lib/types'
+import type { Account, MerchantTagRule, Transaction, TransactionTag } from '../lib/types'
 
 type DateFilter = {
   from?: string
@@ -32,6 +32,7 @@ export function Transactions() {
   const [merchantTagId, setMerchantTagId] = useState('')
   const queryClient = useQueryClient()
   const transactions = useQuery({ queryKey: ['transactions'], queryFn: () => api<Transaction[]>('/api/transactions?pageSize=100') })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<TransactionTag[]>('/api/tags') })
   const merchantRules = useQuery({ queryKey: ['merchant-tags'], queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags') })
   const createTag = useMutation({
@@ -87,21 +88,24 @@ export function Transactions() {
           return (!z.from || value >= z.from) && (!z.to || value <= z.to)
         }
       }),
-      helper.accessor('accountDisplayName', {
+      helper.accessor('accountId', {
         header: 'Account',
-        filterFn: 'includesString'
+        cell: x => (
+          <span
+            className="inline-flex rounded-md border border-[hsl(var(--account-hue)_42%_82%)] bg-[hsl(var(--account-hue)_55%_94%)] px-2 py-1 text-xs font-medium text-[hsl(var(--account-hue)_38%_28%)] dark:border-[hsl(var(--account-hue)_28%_32%)] dark:bg-[hsl(var(--account-hue)_30%_20%)] dark:text-[hsl(var(--account-hue)_32%_78%)]"
+            style={{ '--account-hue': getAccountHue(x.getValue()) } as CSSProperties}
+          >
+            {x.row.original.accountDisplayName}
+          </span>
+        ),
+        filterFn: (x, y, z: string) => x.getValue<string>(y) === z
       }),
       helper.accessor('description', {
         header: 'Description',
         cell: x => (
-          <div className="min-w-64 space-y-2 whitespace-normal">
+          <div className="min-w-64 whitespace-normal">
             <p>{x.getValue()}</p>
-            {x.row.original.merchantName && <p className="text-xs text-muted-foreground">{x.row.original.merchantName}</p>}
-            <TagEditor
-              allTags={tags.data ?? []}
-              selectedTags={x.row.original.tags}
-              onChange={y => setTransactionTags(x.row.original.id, y)}
-            />
+            <p className="min-h-4 text-xs text-muted-foreground">{x.row.original.merchantName}</p>
           </div>
         ),
         filterFn: 'includesString'
@@ -112,11 +116,18 @@ export function Transactions() {
       }),
       helper.accessor('tags', {
         header: 'Tags',
+        cell: x => (
+          <TagEditor
+            allTags={tags.data ?? []}
+            selectedTags={x.row.original.tags}
+            onChange={y => setTransactionTags(x.row.original.id, y)}
+          />
+        ),
         filterFn: (x, y, z: string) => x.getValue<TransactionTag[]>(y).some(a => a.name.toLowerCase().includes(z.toLowerCase()))
       }),
       helper.accessor('amountMinorUnits', {
         header: 'Amount',
-        cell: x => currency(x.getValue(), x.row.original.currency),
+        cell: x => <span className={x.getValue() < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}>{currency(x.getValue(), x.row.original.currency)}</span>,
         filterFn: (x, y, z: AmountFilter) => {
           const value = x.getValue<number>(y) / 100
           const min = z.min ? Number(z.min) : null
@@ -125,7 +136,7 @@ export function Transactions() {
         }
       })
     ],
-    state: { columnFilters, columnVisibility: { tags: false } },
+    state: { columnFilters, columnVisibility: { category: false } },
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel()
@@ -227,12 +238,15 @@ export function Transactions() {
             />
           </FilterField>
           <FilterField label="Account">
-            <input
+            <select
               className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
-              onChange={x => table.getColumn('accountDisplayName')?.setFilterValue(x.target.value)}
-              placeholder="Search accounts"
-              value={(table.getColumn('accountDisplayName')?.getFilterValue() as string | undefined) ?? ''}
-            />
+              disabled={accounts.isLoading}
+              onChange={x => table.getColumn('accountId')?.setFilterValue(x.target.value || undefined)}
+              value={(table.getColumn('accountId')?.getFilterValue() as string | undefined) ?? ''}
+            >
+              <option value="">All accounts</option>
+              {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+            </select>
           </FilterField>
           <FilterField label="Description">
             <input
@@ -381,6 +395,21 @@ function getReadableTextColor(backgroundColor: string) {
   const blue = Number.parseInt(hex.slice(4, 6), 16)
   const luminance = (red * 0.299 + green * 0.587 + blue * 0.114) / 255
   return luminance > 0.65 ? '#111827' : '#ffffff'
+}
+
+function getAccountHue(accountId: string) {
+  const hues = [172, 205, 237, 268, 322, 24, 48, 142]
+  return `${hues[getStableIndex(accountId, hues.length)]}`
+}
+
+function getStableIndex(value: string, length: number) {
+  let hash = 0
+
+  for (const character of value) {
+    hash = (hash * 31 + character.charCodeAt(0)) % length
+  }
+
+  return hash
 }
 
 function DateRangeFilter({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {
