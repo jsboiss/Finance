@@ -19,7 +19,7 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
 
     public async Task<IReadOnlyList<RedbarkAccountDto>> GetAccounts(Guid tenantId, string connectionId, CancellationToken cancellationToken)
     {
-        var accounts = await GetPaginatedDataList(tenantId, "/v1/accounts?limit=200", x => new RedbarkAccountDto(x.GetProperty("id").GetString()!, x.GetProperty("connectionId").GetString()!, x.GetProperty("name").GetString()!, x.GetProperty("currency").GetString() ?? "AUD", JsonDocument.Parse(x.GetRawText())), cancellationToken);
+        var accounts = await GetPaginatedDataList(tenantId, "/v1/accounts?limit=200", x => new RedbarkAccountDto(x.GetProperty("id").GetString()!, x.GetProperty("connectionId").GetString()!, x.GetProperty("name").GetString()!, GetNullableString(x, "accountNumber") ?? "", x.GetProperty("currency").GetString() ?? "AUD", JsonDocument.Parse(x.GetRawText())), cancellationToken);
         return accounts.Where(x => x.ConnectionId == connectionId).ToList();
     }
 
@@ -48,7 +48,21 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
         await EnsureSuccess(response, cancellationToken);
         using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
         var transactions = document.RootElement.GetProperty("data").EnumerateArray()
-            .Select(x => new RedbarkTransactionDto(x.GetProperty("id").GetString()!, x.GetProperty("accountId").GetString()!, x.GetProperty("description").GetString() ?? "", ParseRequiredMinorUnits(x.GetProperty("amount").GetString()), "AUD", DateOnly.Parse(x.GetProperty("date").GetString()!), x.GetProperty("status").GetString() ?? "posted", JsonDocument.Parse(x.GetRawText())))
+            .Select(x => new RedbarkTransactionDto(
+                x.GetProperty("id").GetString()!,
+                x.GetProperty("accountId").GetString()!,
+                GetNullableString(x, "accountName") ?? "",
+                x.GetProperty("description").GetString() ?? "",
+                GetNullableString(x, "merchantName"),
+                GetNullableString(x, "merchantCategoryCode"),
+                GetNullableString(x, "category") ?? "Uncategorized",
+                ParseRequiredMinorUnits(x.GetProperty("amount").GetString()),
+                GetNullableString(x, "currency") ?? "AUD",
+                DateOnly.Parse(x.GetProperty("date").GetString()!),
+                ParseNullableDateTimeOffset(GetNullableString(x, "datetime")),
+                GetNullableString(x, "direction") ?? "",
+                GetNullableString(x, "status") ?? "posted",
+                JsonDocument.Parse(x.GetRawText())))
             .ToList();
         var pagination = document.RootElement.GetProperty("pagination");
         var nextCursor = pagination.GetProperty("hasMore").GetBoolean() ? (offset + limit).ToString(CultureInfo.InvariantCulture) : null;
@@ -147,5 +161,10 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
     private static long ParseRequiredMinorUnits(string? amount)
     {
         return ParseMinorUnits(amount) ?? throw new InvalidOperationException("Redbark transaction amount was missing.");
+    }
+
+    private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
     }
 }

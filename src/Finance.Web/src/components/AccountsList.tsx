@@ -9,7 +9,7 @@ export function AccountsList({ accounts, isLoading }: { accounts: Account[]; isL
         <Card key={account.id}>
           <CardHeader>
             <p className="text-sm text-muted-foreground">{account.institutionName}</p>
-            <CardTitle>{account.name}</CardTitle>
+            <CardTitle>{account.displayName}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">{currency(account.currentBalanceMinorUnits, account.currency)}</p>

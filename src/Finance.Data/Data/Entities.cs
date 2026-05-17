@@ -50,6 +50,7 @@ public sealed class BankAccount
     public Guid BankConnectionId { get; set; }
     public string ExternalAccountId { get; set; } = "";
     public string Name { get; set; } = "";
+    public string AccountNumber { get; set; } = "";
     public string Currency { get; set; } = "AUD";
     public JsonDocument RawJson { get; set; } = JsonDocument.Parse("{}");
 }
@@ -71,10 +72,17 @@ public sealed class BankTransaction
     public Guid TenantId { get; set; }
     public Guid BankAccountId { get; set; }
     public string ExternalTransactionId { get; set; } = "";
+    public string ExternalAccountName { get; set; } = "";
     public string Description { get; set; } = "";
+    public string? MerchantName { get; set; }
+    public string? MerchantCategoryCode { get; set; }
+    public string Category { get; set; } = "Uncategorized";
     public long AmountMinorUnits { get; set; }
     public string Currency { get; set; } = "AUD";
     public DateOnly PostedDate { get; set; }
+    public DateTimeOffset? PostedAt { get; set; }
+    public string Direction { get; set; } = "";
+    public string Status { get; set; } = "posted";
     public JsonDocument RawJson { get; set; } = JsonDocument.Parse("{}");
 }
 

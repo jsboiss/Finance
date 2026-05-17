@@ -12,7 +12,7 @@ public sealed class FakeRedbarkClient : IRedbarkClient
 
     public Task<IReadOnlyList<RedbarkAccountDto>> GetAccounts(Guid tenantId, string connectionId, CancellationToken cancellationToken)
     {
-        return Task.FromResult<IReadOnlyList<RedbarkAccountDto>>([new("acct-1", connectionId, "Everyday", "AUD", System.Text.Json.JsonDocument.Parse("{}"))]);
+        return Task.FromResult<IReadOnlyList<RedbarkAccountDto>>([new("acct-1", connectionId, "Everyday", "xxxx1234", "AUD", System.Text.Json.JsonDocument.Parse("{}"))]);
     }
 
     public Task<IReadOnlyList<RedbarkBalanceDto>> GetBalances(Guid tenantId, IReadOnlyList<string> accountIds, CancellationToken cancellationToken)
@@ -24,8 +24,8 @@ public sealed class FakeRedbarkClient : IRedbarkClient
     {
         var transactions = new[]
         {
-            new RedbarkTransactionDto("txn-posted", accountId, "Coffee", -550, "AUD", DateOnly.FromDateTime(DateTime.UtcNow), "posted", System.Text.Json.JsonDocument.Parse("{}")),
-            new RedbarkTransactionDto("txn-pending", accountId, "Pending", -1000, "AUD", DateOnly.FromDateTime(DateTime.UtcNow), "pending", System.Text.Json.JsonDocument.Parse("{}"))
+            new RedbarkTransactionDto("txn-posted", accountId, "Everyday", "Coffee", "Cafe", "5814", "FOOD_AND_DRINK", -550, "AUD", DateOnly.FromDateTime(DateTime.UtcNow), DateTimeOffset.UtcNow, "debit", "posted", System.Text.Json.JsonDocument.Parse("{}")),
+            new RedbarkTransactionDto("txn-pending", accountId, "Everyday", "Pending", null, null, "Uncategorized", -1000, "AUD", DateOnly.FromDateTime(DateTime.UtcNow), DateTimeOffset.UtcNow, "debit", "pending", System.Text.Json.JsonDocument.Parse("{}"))
         };
         return Task.FromResult(new RedbarkTransactionPage(transactions, null));
     }

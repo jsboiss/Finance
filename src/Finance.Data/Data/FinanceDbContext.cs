@@ -25,7 +25,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         modelBuilder.Entity<BankConnection>(x => x.HasIndex(y => new { y.TenantId, y.ExternalConnectionId }).IsUnique());
         modelBuilder.Entity<BankAccount>(x => x.HasIndex(y => new { y.TenantId, y.ExternalAccountId }).IsUnique());
         modelBuilder.Entity<Balance>(x => x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.AsOf }).IsUnique());
-        modelBuilder.Entity<BankTransaction>(x => x.HasIndex(y => new { y.TenantId, y.ExternalTransactionId }).IsUnique());
+        modelBuilder.Entity<BankTransaction>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.ExternalTransactionId }).IsUnique();
+            x.Property(y => y.Category).HasDefaultValue("Uncategorized");
+            x.Property(y => y.Status).HasDefaultValue("posted");
+        });
         modelBuilder.Entity<WebhookEvent>(x => x.HasIndex(y => new { y.TenantId, y.ExternalEventId }).IsUnique());
         modelBuilder.Entity<RedbarkRequestLog>(x => x.HasIndex(y => new { y.TenantId, y.RequestedAt }));
     }

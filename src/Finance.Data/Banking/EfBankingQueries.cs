@@ -30,7 +30,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var accountRows = await accounts
             .OrderBy(x => x.Name)
-            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.Currency))
+            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.AccountNumber, x.Currency))
             .ToListAsync(cancellationToken);
 
         var connectionIds = accountRows.Select(x => x.BankConnectionId).Distinct().ToList();
@@ -55,6 +55,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Select(x => new AccountDto(
                 x.Id,
                 x.Name,
+                x.AccountNumber,
+                GetAccountDisplayName(x.Name, x.AccountNumber),
                 institutions.GetValueOrDefault(x.BankConnectionId, ""),
                 x.Currency,
                 latestBalances.GetValueOrDefault(x.Id)))
@@ -106,11 +108,55 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize, 1, 200);
-        return await transactions
+        var transactionRows = await transactions
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new TransactionDto(x.Id, x.BankAccountId, x.Description, x.AmountMinorUnits, x.Currency, x.PostedDate))
+            .Select(x => new TransactionRow(
+                x.Id,
+                x.BankAccountId,
+                x.ExternalTransactionId,
+                x.ExternalAccountName,
+                x.Description,
+                x.MerchantName,
+                x.MerchantCategoryCode,
+                x.Category,
+                x.AmountMinorUnits,
+                x.Currency,
+                x.PostedDate,
+                x.PostedAt,
+                x.Direction,
+                x.Status))
             .ToListAsync(cancellationToken);
+
+        var accountIds = transactionRows.Select(x => x.AccountId).Distinct().ToList();
+        var accountDisplays = await dbContext.BankAccounts
+            .Where(x => x.TenantId == tenantId && accountIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name, x.AccountNumber })
+            .ToDictionaryAsync(x => x.Id, x => new AccountDisplay(x.Name, x.AccountNumber), cancellationToken);
+
+        return transactionRows
+            .Select(x =>
+            {
+                var account = accountDisplays.GetValueOrDefault(x.AccountId, new AccountDisplay(x.ExternalAccountName, ""));
+                return new TransactionDto(
+                    x.Id,
+                    x.AccountId,
+                    x.ExternalTransactionId,
+                    account.Name,
+                    account.AccountNumber,
+                    GetAccountDisplayName(account.Name, account.AccountNumber),
+                    x.Description,
+                    x.MerchantName,
+                    x.MerchantCategoryCode,
+                    x.Category,
+                    x.AmountMinorUnits,
+                    x.Currency,
+                    x.PostedDate,
+                    x.PostedAt,
+                    x.Direction,
+                    x.Status);
+            })
+            .ToList();
     }
 
     public async Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken)
@@ -142,5 +188,28 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return new OperationsStatusDto(todayCount, monthCount, totalCount, lastRequestAt);
     }
 
-    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string Currency);
+    private static string GetAccountDisplayName(string name, string accountNumber)
+    {
+        return string.IsNullOrWhiteSpace(accountNumber) ? name : $"{name} - {accountNumber}";
+    }
+
+    private sealed record AccountDisplay(string Name, string AccountNumber);
+
+    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string AccountNumber, string Currency);
+
+    private sealed record TransactionRow(
+        Guid Id,
+        Guid AccountId,
+        string ExternalTransactionId,
+        string ExternalAccountName,
+        string Description,
+        string? MerchantName,
+        string? MerchantCategoryCode,
+        string Category,
+        long AmountMinorUnits,
+        string Currency,
+        DateOnly PostedDate,
+        DateTimeOffset? PostedAt,
+        string Direction,
+        string Status);
 }

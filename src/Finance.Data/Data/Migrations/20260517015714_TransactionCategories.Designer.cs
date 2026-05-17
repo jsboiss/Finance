@@ -4,6 +4,7 @@ using System.Text.Json;
 using Finance.Data.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Finance.Data.Data.Migrations
 {
     [DbContext(typeof(FinanceDbContext))]
-    partial class FinanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260517015714_TransactionCategories")]
+    partial class TransactionCategories
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -116,10 +119,6 @@ namespace Finance.Data.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AccountNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid>("BankConnectionId")
                         .HasColumnType("uuid");
 
@@ -193,9 +192,8 @@ namespace Finance.Data.Data.Migrations
 
                     b.Property<string>("Category")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("Uncategorized");
+                        .HasDefaultValue("Uncategorized")
+                        .HasColumnType("text");
 
                     b.Property<string>("Currency")
                         .IsRequired()
@@ -205,26 +203,9 @@ namespace Finance.Data.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Direction")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ExternalAccountName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("ExternalTransactionId")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("MerchantCategoryCode")
-                        .HasColumnType("text");
-
-                    b.Property<string>("MerchantName")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("PostedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateOnly>("PostedDate")
                         .HasColumnType("date");
@@ -232,12 +213,6 @@ namespace Finance.Data.Data.Migrations
                     b.Property<JsonDocument>("RawJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("posted");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");

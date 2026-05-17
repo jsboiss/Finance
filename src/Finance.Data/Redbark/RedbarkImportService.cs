@@ -121,6 +121,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
         entity.BankConnectionId = connectionId;
         entity.Name = account.Name;
+        entity.AccountNumber = account.AccountNumber;
         entity.Currency = account.Currency;
         entity.RawJson = account.Raw;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -153,10 +154,17 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         }
 
         entity.BankAccountId = accountId;
+        entity.ExternalAccountName = transaction.AccountName;
         entity.Description = transaction.Description;
+        entity.MerchantName = transaction.MerchantName;
+        entity.MerchantCategoryCode = transaction.MerchantCategoryCode;
+        entity.Category = string.IsNullOrWhiteSpace(transaction.Category) ? "Uncategorized" : transaction.Category;
         entity.AmountMinorUnits = transaction.AmountMinorUnits;
         entity.Currency = transaction.Currency;
         entity.PostedDate = transaction.PostedDate;
+        entity.PostedAt = transaction.PostedAt;
+        entity.Direction = transaction.Direction;
+        entity.Status = transaction.Status;
         entity.RawJson = transaction.Raw;
         await dbContext.SaveChangesAsync(cancellationToken);
         return isNew;
