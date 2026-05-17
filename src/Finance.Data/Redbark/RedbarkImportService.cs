@@ -1,5 +1,7 @@
 namespace Finance.Data.Redbark;
 
+using System.Globalization;
+using System.Text.Json;
 using Finance.Core.Abstractions;
 using Finance.Core.Redbark;
 using Finance.Data.Banking;
@@ -35,16 +37,72 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
     public async Task ProcessWebhook(Guid tenantId, string eventId, string eventType, string rawJson, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.WebhookEvents.AnyAsync(x => x.TenantId == tenantId && x.ExternalEventId == eventId, cancellationToken);
-        if (exists)
+        var webhookEvent = await dbContext.WebhookEvents.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ExternalEventId == eventId, cancellationToken);
+        if (webhookEvent?.ProcessedAt is not null)
         {
             return;
         }
 
-        dbContext.WebhookEvents.Add(new WebhookEvent { TenantId = tenantId, ExternalEventId = eventId, EventType = eventType, RawJson = rawJson });
+        if (webhookEvent is null)
+        {
+            webhookEvent = new WebhookEvent { TenantId = tenantId, ExternalEventId = eventId };
+            dbContext.WebhookEvents.Add(webhookEvent);
+        }
+
+        webhookEvent.EventType = eventType;
+        webhookEvent.RawJson = rawJson;
         await dbContext.SaveChangesAsync(cancellationToken);
-        await ReconcileRecent(tenantId, cancellationToken);
-        await dbContext.WebhookEvents.Where(x => x.TenantId == tenantId && x.ExternalEventId == eventId).ExecuteUpdateAsync(x => x.SetProperty(y => y.ProcessedAt, DateTimeOffset.UtcNow), cancellationToken);
+
+        if (eventType == "transactions.synced")
+        {
+            await ProcessTransactionWebhook(tenantId, rawJson, cancellationToken);
+        }
+
+        webhookEvent.ProcessedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task ProcessTransactionWebhook(Guid tenantId, string rawJson, CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(rawJson);
+        var data = document.RootElement.GetProperty("data");
+        var transactions = data.GetProperty("new").EnumerateArray()
+            .Concat(data.GetProperty("updated").EnumerateArray())
+            .Where(x => GetNullableString(x, "status")?.Equals("posted", StringComparison.OrdinalIgnoreCase) ?? true)
+            .Select(ToTransactionDto)
+            .ToList();
+
+        if (transactions.Count == 0)
+        {
+            return;
+        }
+
+        var externalAccountIds = transactions.Select(x => x.AccountId).Distinct().ToList();
+        var accountsByExternalId = await dbContext.BankAccounts
+            .Where(x => x.TenantId == tenantId && externalAccountIds.Contains(x.ExternalAccountId))
+            .ToDictionaryAsync(x => x.ExternalAccountId, cancellationToken);
+
+        var missingAccountIds = externalAccountIds.Where(x => !accountsByExternalId.ContainsKey(x)).ToList();
+        if (missingAccountIds.Count > 0)
+        {
+            throw new InvalidOperationException($"Webhook referenced unknown account IDs: {string.Join(", ", missingAccountIds)}. Run account discovery first.");
+        }
+
+        var importedCount = 0;
+        foreach (var transaction in transactions)
+        {
+            importedCount += await UpsertTransaction(tenantId, accountsByExternalId[transaction.AccountId].Id, transaction, cancellationToken) ? 1 : 0;
+        }
+
+        dbContext.ImportRuns.Add(new ImportRun
+        {
+            TenantId = tenantId,
+            Source = "webhook: transactions.synced",
+            Status = "completed",
+            ImportedCount = importedCount,
+            CompletedAt = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ImportRange(Guid tenantId, DateOnly from, DateOnly to, string source, CancellationToken cancellationToken)
@@ -220,6 +278,25 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         return string.IsNullOrWhiteSpace(account.AccountNumber) ? name : $"{name} - {account.AccountNumber}";
     }
 
+    private static RedbarkTransactionDto ToTransactionDto(JsonElement transaction)
+    {
+        return new RedbarkTransactionDto(
+            transaction.GetProperty("id").GetString()!,
+            transaction.GetProperty("account_id").GetString()!,
+            GetNullableString(transaction, "account_name") ?? GetNullableString(transaction, "account") ?? "",
+            transaction.GetProperty("description").GetString() ?? "",
+            GetNullableString(transaction, "merchant_name"),
+            GetNullableString(transaction, "merchant_category_code"),
+            GetNullableString(transaction, "category") ?? "Uncategorized",
+            transaction.GetProperty("amount").GetInt64(),
+            (GetNullableString(transaction, "currency") ?? "AUD").ToUpperInvariant(),
+            DateOnly.Parse(transaction.GetProperty("local_date").GetString()!, CultureInfo.InvariantCulture),
+            ParseNullableDateTimeOffset(GetNullableString(transaction, "post_date") ?? GetNullableString(transaction, "transaction_date")),
+            GetNullableString(transaction, "direction") ?? "",
+            GetNullableString(transaction, "status") ?? "posted",
+            JsonDocument.Parse(transaction.GetRawText()));
+    }
+
     private async Task<BankConnection> UpsertConnection(Guid tenantId, RedbarkConnectionDto connection, CancellationToken cancellationToken)
     {
         var entity = await dbContext.BankConnections.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ExternalConnectionId == connection.Id, cancellationToken);
@@ -324,5 +401,17 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         {
             dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transaction.Id, TransactionTagId = tagId, Source = "merchant" });
         }
+    }
+
+    private static string? GetNullableString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind is not JsonValueKind.Null
+            ? property.GetString()
+            : null;
+    }
+
+    private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
     }
 }
