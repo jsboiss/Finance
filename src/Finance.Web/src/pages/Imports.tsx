@@ -55,7 +55,7 @@ export function Imports() {
         </Button>
       </div>
       {(backfill.error || reconcile.error || reconcileFull.error || clearData.error) && (
-        <p className="text-sm text-red-700">Operation failed. Check the API logs for the Redbark error details.</p>
+        <p className="text-sm text-destructive">Operation failed. Check the API logs for the Redbark error details.</p>
       )}
       <div className="grid gap-3">
         {(imports.data ?? []).map(x => (
@@ -68,7 +68,7 @@ export function Imports() {
               <Badge variant="secondary">{x.status}</Badge>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">{x.importedCount} transactions imported</p>
-            {x.error && <p className="mt-3 text-sm text-red-700">{x.error}</p>}
+            {x.error && <p className="mt-3 text-sm text-destructive">{x.error}</p>}
           </Card>
         ))}
         {!imports.isLoading && imports.data?.length === 0 && <p className="text-sm text-muted-foreground">No import runs yet.</p>}

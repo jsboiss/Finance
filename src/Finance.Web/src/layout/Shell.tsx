@@ -1,14 +1,18 @@
 import { Outlet } from '@tanstack/react-router'
 import { Activity, Banknote, CircleDollarSign, RefreshCcw, Search } from 'lucide-react'
+import { ThemeToggle } from '../components/ThemeToggle'
 import { NavLink } from './NavLink'
 
 export function Shell() {
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-zinc-200 bg-white lg:block">
-        <div className="flex h-16 items-center gap-2 border-b border-zinc-200 px-6">
-          <CircleDollarSign className="size-6 text-emerald-700" />
-          <span className="font-semibold">Finance</span>
+    <div className="min-h-screen bg-background text-foreground">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-card lg:block">
+        <div className="flex h-16 items-center justify-between gap-2 border-b border-border px-6">
+          <div className="flex min-w-0 items-center gap-2">
+            <CircleDollarSign className="size-6 shrink-0 text-primary" />
+            <span className="truncate font-semibold">Finance</span>
+          </div>
+          <ThemeToggle />
         </div>
         <nav className="space-y-1 p-3">
           <NavLink to="/" icon={<Activity className="size-4" />} label="Overview" />
@@ -17,6 +21,21 @@ export function Shell() {
           <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
         </nav>
       </aside>
+      <header className="border-b border-border bg-card lg:hidden">
+        <div className="flex h-14 items-center justify-between gap-2 px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <CircleDollarSign className="size-6 shrink-0 text-primary" />
+            <span className="truncate font-semibold">Finance</span>
+          </div>
+          <ThemeToggle />
+        </div>
+        <nav className="flex gap-1 overflow-x-auto px-2 pb-2">
+          <NavLink to="/" icon={<Activity className="size-4" />} label="Overview" />
+          <NavLink to="/accounts" icon={<Banknote className="size-4" />} label="Accounts" />
+          <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
+          <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
+        </nav>
+      </header>
       <main className="lg:pl-64">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />

@@ -25,6 +25,7 @@ const tagColorOptions = ['#bae6fd', '#bbf7d0', '#fde68a', '#fecdd3', '#ddd6fe', 
 export function Transactions() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [showFilters, setShowFilters] = useState(false)
+  const [showTagManagement, setShowTagManagement] = useState(false)
   const [tagName, setTagName] = useState('')
   const [tagColor, setTagColor] = useState('#64748b')
   const [merchantName, setMerchantName] = useState('')
@@ -134,73 +135,15 @@ export function Transactions() {
   return (
     <section className="space-y-6">
       <Header title="Transactions" subtitle="Posted transactions only, ready for filtering and reconciliation checks." />
-      <Card className="grid gap-4 p-4 lg:grid-cols-[1fr_1.5fr]">
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">Tags</h2>
-          <div className="flex flex-wrap gap-2">
-            {(tags.data ?? []).map(x => (
-              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1" key={x.id}>
-                <TagPill tag={x} />
-                <button aria-label={`Delete tag ${x.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteTag.mutate(x.id)} type="button">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ))}
-            {!tags.isLoading && (tags.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-            <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setTagName(x.target.value)} placeholder="New tag" value={tagName} />
-            <div className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-2">
-              {tagColorOptions.map(x => (
-                <button
-                  aria-label={`Use tag color ${x}`}
-                  className={`h-5 w-5 rounded-full border border-border ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring ${tagColor.toLowerCase() === x ? 'ring-2 ring-foreground' : ''}`}
-                  key={x}
-                  onClick={() => setTagColor(x)}
-                  style={{ backgroundColor: x }}
-                  type="button"
-                />
-              ))}
-              <input aria-label="Custom tag color" className="h-6 w-8 rounded border-0 bg-transparent p-0" onChange={x => setTagColor(x.target.value)} type="color" value={tagColor} />
-            </div>
-            <Button className="h-9" disabled={!tagName.trim() || createTag.isPending} onClick={() => createTag.mutate()} size="sm">
-              <Plus data-icon="inline-start" />
-              Add
-            </Button>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">Merchant tag rules</h2>
-          <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
-            <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantName(x.target.value)} placeholder="Merchant name" value={merchantName} />
-            <select className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantTagId(x.target.value)} value={merchantTagId}>
-              <option value="">Select tag</option>
-              {(tags.data ?? []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-            <Button disabled={!merchantName.trim() || !merchantTagId || createMerchantRule.isPending} onClick={() => createMerchantRule.mutate()} size="sm">
-              <Plus data-icon="inline-start" />
-              Rule
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(merchantRules.data ?? []).map(x => (
-              <span className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1 text-xs" key={x.id}>
-                {x.merchantName}
-                <TagPill tag={x.tag} />
-                <button aria-label={`Delete rule for ${x.merchantName}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteMerchantRule.mutate(x.id)} type="button">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </span>
-            ))}
-            {!merchantRules.isLoading && (merchantRules.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No merchant rules yet.</span>}
-          </div>
-        </div>
-      </Card>
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Showing {table.getRowModel().rows.length} of {transactions.data?.length ?? 0} transactions
         </p>
         <div className="flex gap-2">
+          <Button onClick={() => setShowTagManagement(x => !x)} size="sm" variant={showTagManagement ? 'secondary' : 'outline'}>
+            <Plus data-icon="inline-start" />
+            Tags
+          </Button>
           <Button onClick={() => setShowFilters(x => !x)} size="sm" variant={showFilters ? 'secondary' : 'outline'}>
             <SlidersHorizontal data-icon="inline-start" />
             Filters
@@ -211,6 +154,70 @@ export function Transactions() {
           </Button>
         </div>
       </div>
+      {showTagManagement && (
+        <Card className="grid gap-6 p-4 lg:grid-cols-[1fr_1.5fr] lg:gap-8">
+          <div className="space-y-3 lg:pr-8">
+            <h2 className="text-sm font-semibold text-foreground">Tags</h2>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+              <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setTagName(x.target.value)} placeholder="New tag" value={tagName} />
+              <div className="flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-2">
+                {tagColorOptions.map(x => (
+                  <button
+                    aria-label={`Use tag color ${x}`}
+                    className={`h-5 w-5 rounded-full border border-border ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring ${tagColor.toLowerCase() === x ? 'ring-2 ring-foreground' : ''}`}
+                    key={x}
+                    onClick={() => setTagColor(x)}
+                    style={{ backgroundColor: x }}
+                    type="button"
+                  />
+                ))}
+                <input aria-label="Custom tag color" className="h-6 w-8 rounded border-0 bg-transparent p-0" onChange={x => setTagColor(x.target.value)} type="color" value={tagColor} />
+              </div>
+              <Button className="h-9" disabled={!tagName.trim() || createTag.isPending} onClick={() => createTag.mutate()} size="sm">
+                <Plus data-icon="inline-start" />
+                Add
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(tags.data ?? []).map(x => (
+                <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1" key={x.id}>
+                  <TagPill tag={x} />
+                  <button aria-label={`Delete tag ${x.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteTag.mutate(x.id)} type="button">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+              {!tags.isLoading && (tags.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
+            </div>
+          </div>
+          <div className="space-y-3 border-t border-border pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+            <h2 className="text-sm font-semibold text-foreground">Merchant tag rules</h2>
+            <div className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+              <input className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantName(x.target.value)} placeholder="Merchant name" value={merchantName} />
+              <select className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setMerchantTagId(x.target.value)} value={merchantTagId}>
+                <option value="">Select tag</option>
+                {(tags.data ?? []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+              <Button disabled={!merchantName.trim() || !merchantTagId || createMerchantRule.isPending} onClick={() => createMerchantRule.mutate()} size="sm">
+                <Plus data-icon="inline-start" />
+                Rule
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(merchantRules.data ?? []).map(x => (
+                <span className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1 text-xs" key={x.id}>
+                  {x.merchantName}
+                  <TagPill tag={x.tag} />
+                  <button aria-label={`Delete rule for ${x.merchantName}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteMerchantRule.mutate(x.id)} type="button">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+              {!merchantRules.isLoading && (merchantRules.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No merchant rules yet.</span>}
+            </div>
+          </div>
+        </Card>
+      )}
       {showFilters && (
         <Card className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-5">
           <FilterField className="xl:col-span-2" label="Date">
@@ -259,14 +266,14 @@ export function Transactions() {
           </FilterField>
         </Card>
       )}
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <Table>
-          <TableHeader className="bg-zinc-100 text-xs uppercase text-zinc-500">
+          <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
             {table.getHeaderGroups().map(x => (
               <TableRow key={x.id}>{x.headers.map(y => <TableHead className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.header, y.getContext())}</TableHead>)}</TableRow>
             ))}
           </TableHeader>
-          <TableBody className="divide-y divide-zinc-200">
+          <TableBody className="divide-y divide-border">
             {table.getRowModel().rows.map(x => (
               <TableRow key={x.id}>{x.getVisibleCells().map(y => <TableCell className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.cell, y.getContext())}</TableCell>)}</TableRow>
             ))}
