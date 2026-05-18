@@ -196,7 +196,7 @@ function mapDailyCashFlow(days?: OverviewDailyCashFlow[]) {
 
 function OverviewLoading() {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+    <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg">
       <Loader2 className="h-4 w-4 animate-spin" />
       <span>Loading overview...</span>
     </div>

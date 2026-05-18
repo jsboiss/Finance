@@ -153,7 +153,7 @@ export function Transactions() {
       <Header title="Transactions" subtitle="Posted transactions only, ready for filtering and reconciliation checks." />
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Loader2 className={isLoading ? 'h-4 w-4 animate-spin opacity-100' : 'h-4 w-4 opacity-0'} />
           <span>Showing {table.getRowModel().rows.length} of {transactions.data?.length ?? 0} transactions</span>
         </div>
         <div className="flex gap-2">
@@ -287,7 +287,9 @@ export function Transactions() {
         </Card>
       )}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {isLoading && <div className="h-1 bg-primary/20"><div className="h-full w-1/3 animate-pulse bg-primary" /></div>}
+        <div className={isLoading ? 'h-1 bg-primary/20 opacity-100' : 'h-1 bg-primary/20 opacity-0'}>
+          <div className="h-full w-1/3 animate-pulse bg-primary" />
+        </div>
         <Table>
           <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
             {table.getHeaderGroups().map(x => (
