@@ -108,6 +108,11 @@ export type OverviewDailyCashFlow = {
   expensesMinorUnits: number
 }
 
+export type OverviewMetricSnapshot = {
+  key: string
+  averageDailySpendMinorUnits: number
+}
+
 export type Subscription = {
   id: string
   name: string

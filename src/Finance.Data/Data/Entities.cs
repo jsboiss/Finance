@@ -115,6 +115,18 @@ public sealed class BankTransactionTag
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class OverviewMetricSnapshot
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid? BankAccountId { get; set; }
+    public string ScopeKey { get; set; } = "";
+    public DateOnly SnapshotDate { get; set; }
+    public long AverageDailySpendMinorUnits { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class MerchantTag
 {
     public Guid Id { get; set; } = Guid.NewGuid();

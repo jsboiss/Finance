@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import type React from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CircleDollarSign, Loader2, ReceiptText } from 'lucide-react'
+import { CircleDollarSign, LineChart, Loader2, ReceiptText, X } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Metric } from '../components/Metric'
 import { Button } from '../components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, TransactionTag } from '../lib/types'
+import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, OverviewMetricSnapshot, TransactionTag } from '../lib/types'
 
 type DailyCashFlowRange = '1w' | '1m' | '3m'
 
@@ -40,6 +40,7 @@ const dailyCashFlowRanges: { value: DailyCashFlowRange; label: string; descripti
 export function Overview() {
   const [overviewAccountId, setOverviewAccountId] = useState('all')
   const [dailyCashFlowRange, setDailyCashFlowRange] = useState<DailyCashFlowRange>('1m')
+  const [showAverageDailySpendHistory, setShowAverageDailySpendHistory] = useState(false)
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const overview = useQuery({
     queryKey: ['overview', overviewAccountId],
@@ -64,8 +65,22 @@ export function Overview() {
       return api<OverviewDailyCashFlow[]>(`/api/overview/daily-cash-flow?${params}`)
     }
   })
+  const averageDailySpendHistory = useQuery({
+    enabled: showAverageDailySpendHistory,
+    placeholderData: x => x,
+    queryKey: ['average-daily-spend-history', overviewAccountId],
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (overviewAccountId !== 'all') {
+        params.set('accountId', overviewAccountId)
+      }
+
+      return api<OverviewMetricSnapshot[]>(`/api/overview/average-daily-spend-history${params.size === 0 ? '' : `?${params}`}`)
+    }
+  })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
   const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlow.data ?? overview.data?.dailyCashFlow), [dailyCashFlow.data, overview.data?.dailyCashFlow])
+  const averageDailySpendTrend = useMemo(() => mapAverageDailySpendHistory(averageDailySpendHistory.data), [averageDailySpendHistory.data])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
   const isLoading = accounts.isLoading || overview.isLoading
 
@@ -87,9 +102,36 @@ export function Overview() {
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label={overviewAccountId === 'all' ? 'Total balance' : 'Account balance'} value={currency(analysis.balance, 'AUD')} />
         <Metric label="This month spent" value={currency(analysis.currentMonthSpend, 'AUD')} />
-        <Metric label="Avg daily spend" value={currency(analysis.averageDailySpend, 'AUD')} />
+        <Metric
+          action={
+            <Button
+              aria-label={showAverageDailySpendHistory ? 'Hide average daily spend trend' : 'Show average daily spend trend'}
+              onClick={() => setShowAverageDailySpendHistory(x => !x)}
+              size="icon"
+              title={showAverageDailySpendHistory ? 'Hide trend' : 'Show trend'}
+              type="button"
+              variant={showAverageDailySpendHistory ? 'secondary' : 'ghost'}
+            >
+              {showAverageDailySpendHistory ? <X className="h-4 w-4" /> : <LineChart className="h-4 w-4" />}
+            </Button>
+          }
+          label="Avg daily spend"
+          value={currency(analysis.averageDailySpend, 'AUD')}
+        />
         <Metric label="Tagged coverage" value={`${analysis.taggedCoverage}%`} />
       </div>
+
+      {showAverageDailySpendHistory && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Avg daily spend trend</CardTitle>
+            <CardDescription>{averageDailySpendTrend.length > 0 ? `${formatDailyCashFlowDate(averageDailySpendTrend[0].key)} to ${formatDailyCashFlowDate(averageDailySpendTrend.at(-1)?.key ?? averageDailySpendTrend[0].key)}` : 'Loading trend'}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AverageDailySpendTrend points={averageDailySpendTrend} isLoading={averageDailySpendHistory.isFetching} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -191,6 +233,13 @@ function mapDailyCashFlow(days?: OverviewDailyCashFlow[]) {
     day: x.day,
     income: x.incomeMinorUnits,
     expenses: x.expensesMinorUnits
+  }))
+}
+
+function mapAverageDailySpendHistory(days?: OverviewMetricSnapshot[]) {
+  return (days ?? []).map(x => ({
+    key: x.key,
+    value: x.averageDailySpendMinorUnits
   }))
 }
 
@@ -311,6 +360,33 @@ function DailyCashFlowBars({ days, isLoading }: { days: { key: string; day: numb
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.14_160)]" />Income</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.66_0.19_27)]" />Spend</span>
+      </div>
+    </div>
+  )
+}
+
+function AverageDailySpendTrend({ points, isLoading }: { points: { key: string; value: number }[]; isLoading: boolean }) {
+  const width = 720
+  const height = 220
+  const padding = 20
+  const max = Math.max(...points.map(x => x.value), 1)
+  const path = points.map((x, index) => {
+    const left = points.length <= 1 ? padding : padding + (index / (points.length - 1)) * (width - padding * 2)
+    const top = height - padding - (x.value / max) * (height - padding * 2)
+    return `${index === 0 ? 'M' : 'L'} ${left} ${top}`
+  }).join(' ')
+
+  return (
+    <div className={isLoading ? 'space-y-3 opacity-60 transition-opacity' : 'space-y-3 transition-opacity'}>
+      <div className="h-64 overflow-hidden rounded-md border border-border bg-muted">
+        <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+          <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
+          {path && <path d={path} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+        </svg>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{points[0] ? currency(points[0].value, 'AUD') : currency(0, 'AUD')}</span>
+        <span>{points.at(-1) ? currency(points.at(-1)!.value, 'AUD') : currency(0, 'AUD')}</span>
       </div>
     </div>
   )

@@ -14,6 +14,8 @@ public interface IBankingQueries
 
     Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, string? range, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken);

@@ -60,6 +60,8 @@ public sealed record OverviewTagSpendDto(Guid Id, string Name, string Color, lon
 
 public sealed record OverviewDailyCashFlowDto(string Key, int Day, long IncomeMinorUnits, long ExpensesMinorUnits);
 
+public sealed record OverviewMetricSnapshotDto(string Key, long AverageDailySpendMinorUnits);
+
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
 
 public sealed record SubscriptionDto(
