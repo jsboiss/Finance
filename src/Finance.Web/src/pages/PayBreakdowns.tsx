@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Edit3, Plus, Trash2, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Header } from '../components/Header'
@@ -34,7 +34,11 @@ export function PayBreakdowns() {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(emptyForm)
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
-  const profiles = useQuery({ queryKey: ['pay-breakdowns'], queryFn: () => api<PayBreakdownProfile[]>('/api/pay-breakdowns') })
+  const profiles = useQuery({
+    queryKey: ['pay-breakdowns'],
+    queryFn: () => api<PayBreakdownProfile[]>('/api/pay-breakdowns'),
+    placeholderData: keepPreviousData
+  })
   const canCreateMore = (profiles.data?.length ?? 0) < 2
   const isEditing = !!form.id
   const selectedMainAccount = useMemo(() => accounts.data?.find(x => x.id === form.mainAccountId), [accounts.data, form.mainAccountId])
@@ -54,14 +58,27 @@ export function PayBreakdowns() {
         body
       })
     },
-    onSuccess: () => {
+    onSuccess: profile => {
       setForm(emptyForm)
-      void queryClient.invalidateQueries({ queryKey: ['pay-breakdowns'] })
+      queryClient.setQueryData<PayBreakdownProfile[]>(['pay-breakdowns'], x => {
+        const profiles = x ?? []
+        return profiles.some(y => y.id === profile.id)
+          ? profiles.map(y => y.id === profile.id ? profile : y)
+          : [...profiles, profile]
+      })
     }
   })
   const deleteProfile = useMutation({
     mutationFn: (profileId: string) => api<void>(`/api/pay-breakdowns/${profileId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pay-breakdowns'] })
+    onMutate: async profileId => {
+      await queryClient.cancelQueries({ queryKey: ['pay-breakdowns'] })
+      const previousProfiles = queryClient.getQueryData<PayBreakdownProfile[]>(['pay-breakdowns'])
+      queryClient.setQueryData<PayBreakdownProfile[]>(['pay-breakdowns'], x => (x ?? []).filter(y => y.id !== profileId))
+      return { previousProfiles }
+    },
+    onError: (_error, _profileId, context) => {
+      queryClient.setQueryData(['pay-breakdowns'], context?.previousProfiles)
+    }
   })
 
   function editProfile(profile: PayBreakdownProfile) {
@@ -140,9 +157,12 @@ export function PayBreakdowns() {
           </div>
         </Card>
       )}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {(profiles.data ?? []).map(x => <PayBreakdownCard key={x.id} profile={x} onDelete={removeProfile} onEdit={editProfile} />)}
-      </div>
+      {profiles.isLoading && <PayBreakdownLoading />}
+      {!profiles.isLoading && (
+        <div className={profiles.isFetching ? 'grid gap-4 opacity-70 transition-opacity xl:grid-cols-2' : 'grid gap-4 transition-opacity xl:grid-cols-2'}>
+          {(profiles.data ?? []).map(x => <PayBreakdownCard key={x.id} profile={x} onDelete={removeProfile} onEdit={editProfile} />)}
+        </div>
+      )}
       {!profiles.isLoading && profiles.data?.length === 0 && (
         <Card className="p-8 text-center">
           <WalletCards className="mx-auto size-8 text-muted-foreground" />
@@ -151,6 +171,34 @@ export function PayBreakdowns() {
         </Card>
       )}
     </section>
+  )
+}
+
+function PayBreakdownLoading() {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      {[0, 1].map(x => (
+        <Card key={x}>
+          <CardHeader>
+            <div className="h-5 w-40 animate-pulse rounded bg-muted" />
+            <div className="mt-2 h-4 w-56 animate-pulse rounded bg-muted" />
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[0, 1, 2].map(y => <div className="h-20 animate-pulse rounded-md bg-muted" key={y} />)}
+            </div>
+            <div className="space-y-3">
+              {[0, 1, 2].map(y => (
+                <div className="rounded-md border border-border p-3" key={y}>
+                  <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+                  <div className="mt-3 h-2 animate-pulse rounded bg-muted" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   )
 }
 
