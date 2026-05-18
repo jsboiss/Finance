@@ -64,6 +64,33 @@ public sealed record OverviewMetricSnapshotDto(string Key, long AverageDailySpen
 
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
 
+public sealed record PayBreakdownProfileDto(
+    Guid Id,
+    string Name,
+    AccountDto MainAccount,
+    AccountDto? SavingsAccount,
+    long FortnightlyPayMinorUnits,
+    string Currency,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    PayBreakdownDto Breakdown);
+
+public sealed record PayBreakdownDto(
+    DateOnly From,
+    DateOnly To,
+    long PayMinorUnits,
+    long PersonalExpenseMinorUnits,
+    long InternalExpenseMinorUnits,
+    long SavingsTransferMinorUnits,
+    long RemainingMinorUnits,
+    IReadOnlyList<PayBreakdownCategoryDto> Categories);
+
+public sealed record PayBreakdownCategoryDto(string Key, string Label, long AmountMinorUnits);
+
+public sealed record CreatePayBreakdownProfileRequest(string Name, Guid MainAccountId, Guid? SavingsAccountId, long FortnightlyPayMinorUnits, string? Currency);
+
+public sealed record UpdatePayBreakdownProfileRequest(string Name, Guid MainAccountId, Guid? SavingsAccountId, long FortnightlyPayMinorUnits, string? Currency);
+
 public sealed record SubscriptionDto(
     Guid Id,
     string Name,

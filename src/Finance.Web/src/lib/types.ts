@@ -113,6 +113,35 @@ export type OverviewMetricSnapshot = {
   averageDailySpendMinorUnits: number
 }
 
+export type PayBreakdownProfile = {
+  id: string
+  name: string
+  mainAccount: Account
+  savingsAccount: Account | null
+  fortnightlyPayMinorUnits: number
+  currency: string
+  createdAt: string
+  updatedAt: string
+  breakdown: PayBreakdown
+}
+
+export type PayBreakdown = {
+  from: string
+  to: string
+  payMinorUnits: number
+  personalExpenseMinorUnits: number
+  internalExpenseMinorUnits: number
+  savingsTransferMinorUnits: number
+  remainingMinorUnits: number
+  categories: PayBreakdownCategory[]
+}
+
+export type PayBreakdownCategory = {
+  key: string
+  label: string
+  amountMinorUnits: number
+}
+
 export type Subscription = {
   id: string
   name: string

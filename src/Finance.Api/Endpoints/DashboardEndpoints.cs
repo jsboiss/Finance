@@ -26,6 +26,11 @@ public static class DashboardEndpoints
         group.MapGet("/overview/daily-cash-flow", GetDailyCashFlow);
         group.MapGet("/overview/average-daily-spend-history", GetAverageDailySpendHistory);
         group.MapGet("/transactions", GetTransactions);
+        group.MapGet("/pay-breakdowns", GetPayBreakdownProfiles);
+        group.MapGet("/pay-breakdowns/{profileId:guid}", GetPayBreakdownProfile);
+        group.MapPost("/pay-breakdowns", CreatePayBreakdownProfile);
+        group.MapPut("/pay-breakdowns/{profileId:guid}", UpdatePayBreakdownProfile);
+        group.MapDelete("/pay-breakdowns/{profileId:guid}", DeletePayBreakdownProfile);
         group.MapGet("/tags", GetTags);
         group.MapPost("/tags", CreateTag);
         group.MapDelete("/tags/{tagId:guid}", DeleteTag);
@@ -102,6 +107,33 @@ public static class DashboardEndpoints
         CancellationToken cancellationToken)
     {
         return queries.GetTransactions(new TransactionQuery(accountId, from, to, search, page ?? 1, pageSize ?? 50, sort), cancellationToken);
+    }
+
+    private static Task<IReadOnlyList<PayBreakdownProfileDto>> GetPayBreakdownProfiles(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetPayBreakdownProfiles(cancellationToken);
+    }
+
+    private static async Task<Results<Ok<PayBreakdownProfileDto>, NotFound>> GetPayBreakdownProfile(Guid profileId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var profile = await queries.GetPayBreakdownProfile(profileId, cancellationToken);
+        return profile is null ? TypedResults.NotFound() : TypedResults.Ok(profile);
+    }
+
+    private static Task<PayBreakdownProfileDto> CreatePayBreakdownProfile(CreatePayBreakdownProfileRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.CreatePayBreakdownProfile(request, cancellationToken);
+    }
+
+    private static async Task<Results<Ok<PayBreakdownProfileDto>, NotFound>> UpdatePayBreakdownProfile(Guid profileId, UpdatePayBreakdownProfileRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var profile = await queries.UpdatePayBreakdownProfile(profileId, request, cancellationToken);
+        return profile is null ? TypedResults.NotFound() : TypedResults.Ok(profile);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DeletePayBreakdownProfile(Guid profileId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return await queries.DeletePayBreakdownProfile(profileId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
     private static Task<IReadOnlyList<TransactionTagDto>> GetTags(IBankingQueries queries, CancellationToken cancellationToken)

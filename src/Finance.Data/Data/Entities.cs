@@ -127,6 +127,19 @@ public sealed class OverviewMetricSnapshot
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class PayBreakdownProfile
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = "";
+    public Guid MainAccountId { get; set; }
+    public Guid? SavingsAccountId { get; set; }
+    public long FortnightlyPayMinorUnits { get; set; }
+    public string Currency { get; set; } = "AUD";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class MerchantTag
 {
     public Guid Id { get; set; } = Guid.NewGuid();

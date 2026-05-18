@@ -1,0 +1,226 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Edit3, Plus, Trash2, WalletCards } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Header } from '../components/Header'
+import { Badge } from '../components/ui/badge'
+import { Button } from '../components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { api } from '../lib/api'
+import { currency } from '../lib/format'
+import type { Account, PayBreakdownProfile } from '../lib/types'
+
+type FormState = {
+  id?: string
+  name: string
+  mainAccountId: string
+  savingsAccountId: string
+  fortnightlyPay: string
+}
+
+const emptyForm: FormState = {
+  name: '',
+  mainAccountId: '',
+  savingsAccountId: '',
+  fortnightlyPay: ''
+}
+
+const categoryColors: Record<string, string> = {
+  personal: 'oklch(0.66 0.19 27)',
+  internal: 'oklch(0.58 0.12 260)',
+  savings: 'oklch(0.62 0.14 160)'
+}
+
+export function PayBreakdowns() {
+  const queryClient = useQueryClient()
+  const [form, setForm] = useState<FormState>(emptyForm)
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
+  const profiles = useQuery({ queryKey: ['pay-breakdowns'], queryFn: () => api<PayBreakdownProfile[]>('/api/pay-breakdowns') })
+  const canCreateMore = (profiles.data?.length ?? 0) < 2
+  const isEditing = !!form.id
+  const selectedMainAccount = useMemo(() => accounts.data?.find(x => x.id === form.mainAccountId), [accounts.data, form.mainAccountId])
+  const saveProfile = useMutation({
+    mutationFn: () => {
+      const body = JSON.stringify({
+        name: form.name,
+        mainAccountId: form.mainAccountId,
+        savingsAccountId: form.savingsAccountId || null,
+        fortnightlyPayMinorUnits: dollarsToMinorUnits(form.fortnightlyPay),
+        currency: selectedMainAccount?.currency ?? 'AUD'
+      })
+
+      return api<PayBreakdownProfile>(form.id ? `/api/pay-breakdowns/${form.id}` : '/api/pay-breakdowns', {
+        method: form.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      })
+    },
+    onSuccess: () => {
+      setForm(emptyForm)
+      void queryClient.invalidateQueries({ queryKey: ['pay-breakdowns'] })
+    }
+  })
+  const deleteProfile = useMutation({
+    mutationFn: (profileId: string) => api<void>(`/api/pay-breakdowns/${profileId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pay-breakdowns'] })
+  })
+
+  function editProfile(profile: PayBreakdownProfile) {
+    setForm({
+      id: profile.id,
+      name: profile.name,
+      mainAccountId: profile.mainAccount.id,
+      savingsAccountId: profile.savingsAccount?.id ?? '',
+      fortnightlyPay: minorUnitsToDollars(profile.fortnightlyPayMinorUnits)
+    })
+  }
+
+  function removeProfile(profile: PayBreakdownProfile) {
+    if (window.confirm(`Delete ${profile.name}'s pay breakdown?`)) {
+      deleteProfile.mutate(profile.id)
+    }
+  }
+
+  return (
+    <section className="space-y-6">
+      <Header title="Pay breakdowns" subtitle="Compare fortnightly pay against personal spending, internal expenses, and savings transfers." />
+      {(canCreateMore || isEditing) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{isEditing ? 'Edit profile' : 'New profile'}</CardTitle>
+            <CardDescription>{isEditing ? 'Update the selected accounts and fortnightly pay.' : 'Create up to two profiles for separate pay breakdowns.'}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.7fr)_auto]">
+              <input
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+                onChange={x => setForm(y => ({ ...y, name: x.target.value }))}
+                placeholder="Name"
+                value={form.name}
+              />
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+                onChange={x => setForm(y => ({ ...y, mainAccountId: x.target.value, savingsAccountId: y.savingsAccountId === x.target.value ? '' : y.savingsAccountId }))}
+                value={form.mainAccountId}
+              >
+                <option value="">Main account</option>
+                {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+              </select>
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+                onChange={x => setForm(y => ({ ...y, savingsAccountId: x.target.value }))}
+                value={form.savingsAccountId}
+              >
+                <option value="">No savings account</option>
+                {(accounts.data ?? []).filter(x => x.id !== form.mainAccountId).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+              </select>
+              <input
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+                inputMode="decimal"
+                onChange={x => setForm(y => ({ ...y, fortnightlyPay: x.target.value }))}
+                placeholder="Fortnightly pay"
+                value={form.fortnightlyPay}
+              />
+              <div className="flex gap-2">
+                <Button disabled={saveProfile.isPending || !form.name.trim() || !form.mainAccountId} onClick={() => saveProfile.mutate()}>
+                  <Plus data-icon="inline-start" />
+                  {isEditing ? 'Save' : 'Add'}
+                </Button>
+                {isEditing && <Button onClick={() => setForm(emptyForm)} variant="outline">Cancel</Button>}
+              </div>
+            </div>
+            {saveProfile.error && <p className="mt-3 text-sm text-destructive">Could not save this breakdown. Check that the profile name is unique and both accounts are valid.</p>}
+          </CardContent>
+        </Card>
+      )}
+      {!canCreateMore && !isEditing && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Two pay breakdown profiles are configured.</p>
+            <Badge variant="secondary">Limit reached</Badge>
+          </div>
+        </Card>
+      )}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {(profiles.data ?? []).map(x => <PayBreakdownCard key={x.id} profile={x} onDelete={removeProfile} onEdit={editProfile} />)}
+      </div>
+      {!profiles.isLoading && profiles.data?.length === 0 && (
+        <Card className="p-8 text-center">
+          <WalletCards className="mx-auto size-8 text-muted-foreground" />
+          <p className="mt-3 font-medium">No pay breakdowns yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add one for yourself, then add a second one for your partner.</p>
+        </Card>
+      )}
+    </section>
+  )
+}
+
+function PayBreakdownCard({ profile, onDelete, onEdit }: { profile: PayBreakdownProfile; onDelete: (profile: PayBreakdownProfile) => void; onEdit: (profile: PayBreakdownProfile) => void }) {
+  const totalAllocated = profile.breakdown.personalExpenseMinorUnits + profile.breakdown.internalExpenseMinorUnits + profile.breakdown.savingsTransferMinorUnits
+  const max = Math.max(profile.breakdown.payMinorUnits, totalAllocated, 1)
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>{profile.name}</CardTitle>
+          <CardDescription>
+            {formatDate(profile.breakdown.from)} to {formatDate(profile.breakdown.to)}
+          </CardDescription>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={() => onEdit(profile)} size="icon" title="Edit pay breakdown" variant="outline">
+            <Edit3 className="size-4" />
+          </Button>
+          <Button onClick={() => onDelete(profile)} size="icon" title="Delete pay breakdown" variant="destructive">
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <BreakdownMetric label="Fortnightly pay" value={profile.breakdown.payMinorUnits} currencyCode={profile.currency} />
+          <BreakdownMetric label="Allocated" value={totalAllocated} currencyCode={profile.currency} />
+          <BreakdownMetric label="Remaining" value={profile.breakdown.remainingMinorUnits} currencyCode={profile.currency} />
+        </div>
+        <div className="space-y-3">
+          {profile.breakdown.categories.map(x => (
+            <div className="space-y-1.5" key={x.key}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium">{x.label}</span>
+                <span className="font-semibold">{currency(x.amountMinorUnits, profile.currency)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full" style={{ backgroundColor: categoryColors[x.key] ?? 'oklch(0.55 0.02 250)', width: `${Math.max((x.amountMinorUnits / max) * 100, x.amountMinorUnits > 0 ? 2 : 0)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-2 rounded-md border border-border bg-muted p-3 text-sm">
+          <p><span className="text-muted-foreground">Main:</span> {profile.mainAccount.displayName}</p>
+          <p><span className="text-muted-foreground">Savings:</span> {profile.savingsAccount?.displayName ?? 'Not set'}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function BreakdownMetric({ label, value, currencyCode }: { label: string; value: number; currencyCode: string }) {
+  return (
+    <div className="rounded-md border border-border bg-muted p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={value < 0 ? 'mt-1 text-lg font-semibold text-destructive' : 'mt-1 text-lg font-semibold'}>{currency(value, currencyCode)}</p>
+    </div>
+  )
+}
+
+function dollarsToMinorUnits(value: string) {
+  return Math.round(Number.parseFloat(value || '0') * 100)
+}
+
+function minorUnitsToDollars(value: number) {
+  return (value / 100).toFixed(2)
+}
+
+function formatDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}

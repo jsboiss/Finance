@@ -18,6 +18,16 @@ public interface IBankingQueries
 
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PayBreakdownProfileDto>> GetPayBreakdownProfiles(CancellationToken cancellationToken);
+
+    Task<PayBreakdownProfileDto?> GetPayBreakdownProfile(Guid profileId, CancellationToken cancellationToken);
+
+    Task<PayBreakdownProfileDto> CreatePayBreakdownProfile(CreatePayBreakdownProfileRequest request, CancellationToken cancellationToken);
+
+    Task<PayBreakdownProfileDto?> UpdatePayBreakdownProfile(Guid profileId, UpdatePayBreakdownProfileRequest request, CancellationToken cancellationToken);
+
+    Task<bool> DeletePayBreakdownProfile(Guid profileId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken);
 
     Task<TransactionTagDto> CreateTag(CreateTransactionTagRequest request, CancellationToken cancellationToken);

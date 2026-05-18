@@ -414,6 +414,95 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToList();
     }
 
+    public async Task<IReadOnlyList<PayBreakdownProfileDto>> GetPayBreakdownProfiles(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profiles = await dbContext.PayBreakdownProfiles
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return await ToPayBreakdownProfileDtos(tenantId, profiles, cancellationToken);
+    }
+
+    public async Task<PayBreakdownProfileDto?> GetPayBreakdownProfile(Guid profileId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = await dbContext.PayBreakdownProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == profileId, cancellationToken);
+
+        if (profile is null)
+        {
+            return null;
+        }
+
+        return (await ToPayBreakdownProfileDtos(tenantId, [profile], cancellationToken)).FirstOrDefault();
+    }
+
+    public async Task<PayBreakdownProfileDto> CreatePayBreakdownProfile(CreatePayBreakdownProfileRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var existingCount = await dbContext.PayBreakdownProfiles.CountAsync(x => x.TenantId == tenantId, cancellationToken);
+        if (existingCount >= 2)
+        {
+            throw new InvalidOperationException("Only two pay breakdown profiles can be created.");
+        }
+
+        await ValidatePayBreakdownAccounts(tenantId, request.MainAccountId, request.SavingsAccountId, cancellationToken);
+
+        var profile = new PayBreakdownProfile
+        {
+            TenantId = tenantId,
+            Name = CleanRequired(request.Name, "Profile name is required."),
+            MainAccountId = request.MainAccountId,
+            SavingsAccountId = request.SavingsAccountId,
+            FortnightlyPayMinorUnits = Math.Max(0, request.FortnightlyPayMinorUnits),
+            Currency = CleanCurrency(request.Currency ?? "AUD")
+        };
+
+        dbContext.PayBreakdownProfiles.Add(profile);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (await ToPayBreakdownProfileDtos(tenantId, [profile], cancellationToken)).First();
+    }
+
+    public async Task<PayBreakdownProfileDto?> UpdatePayBreakdownProfile(Guid profileId, UpdatePayBreakdownProfileRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = await dbContext.PayBreakdownProfiles.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == profileId, cancellationToken);
+        if (profile is null)
+        {
+            return null;
+        }
+
+        await ValidatePayBreakdownAccounts(tenantId, request.MainAccountId, request.SavingsAccountId, cancellationToken);
+
+        profile.Name = CleanRequired(request.Name, "Profile name is required.");
+        profile.MainAccountId = request.MainAccountId;
+        profile.SavingsAccountId = request.SavingsAccountId;
+        profile.FortnightlyPayMinorUnits = Math.Max(0, request.FortnightlyPayMinorUnits);
+        profile.Currency = CleanCurrency(request.Currency ?? profile.Currency);
+        profile.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (await ToPayBreakdownProfileDtos(tenantId, [profile], cancellationToken)).First();
+    }
+
+    public async Task<bool> DeletePayBreakdownProfile(Guid profileId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = await dbContext.PayBreakdownProfiles.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == profileId, cancellationToken);
+        if (profile is null)
+        {
+            return false;
+        }
+
+        dbContext.PayBreakdownProfiles.Remove(profile);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
@@ -1343,6 +1432,155 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return values;
     }
 
+    private async Task ValidatePayBreakdownAccounts(Guid tenantId, Guid mainAccountId, Guid? savingsAccountId, CancellationToken cancellationToken)
+    {
+        if (savingsAccountId == mainAccountId)
+        {
+            throw new InvalidOperationException("Savings account must be different to the main account.");
+        }
+
+        var requiredAccountIds = new[] { mainAccountId }
+            .Concat(savingsAccountId is { } x ? [x] : [])
+            .ToList();
+        var existingAccountIds = await dbContext.BankAccounts
+            .Where(x => x.TenantId == tenantId && requiredAccountIds.Contains(x.Id))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (existingAccountIds.Count != requiredAccountIds.Count)
+        {
+            throw new InvalidOperationException("Selected accounts must belong to the current tenant.");
+        }
+    }
+
+    private async Task<IReadOnlyList<PayBreakdownProfileDto>> ToPayBreakdownProfileDtos(Guid tenantId, IReadOnlyList<PayBreakdownProfile> profiles, CancellationToken cancellationToken)
+    {
+        if (profiles.Count == 0)
+        {
+            return [];
+        }
+
+        var accountIds = profiles.Select(x => x.MainAccountId)
+            .Concat(profiles.Where(x => x.SavingsAccountId is not null).Select(x => x.SavingsAccountId!.Value))
+            .Distinct()
+            .ToList();
+        var accounts = (await GetAccountDtos(tenantId, accountId: null, cancellationToken))
+            .Where(x => accountIds.Contains(x.Id))
+            .ToDictionary(x => x.Id);
+        var breakdowns = new Dictionary<Guid, PayBreakdownDto>();
+
+        foreach (var profile in profiles)
+        {
+            breakdowns[profile.Id] = await GetPayBreakdown(tenantId, profile, cancellationToken);
+        }
+
+        return profiles
+            .Where(x => accounts.ContainsKey(x.MainAccountId))
+            .Select(x => new PayBreakdownProfileDto(
+                x.Id,
+                x.Name,
+                accounts[x.MainAccountId],
+                x.SavingsAccountId is { } savingsAccountId ? accounts.GetValueOrDefault(savingsAccountId) : null,
+                x.FortnightlyPayMinorUnits,
+                x.Currency,
+                x.CreatedAt,
+                x.UpdatedAt,
+                breakdowns[x.Id]))
+            .ToList();
+    }
+
+    private async Task<PayBreakdownDto> GetPayBreakdown(Guid tenantId, PayBreakdownProfile profile, CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = today.AddDays(-13);
+        var transactions = await dbContext.BankTransactions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId
+                && x.BankAccountId == profile.MainAccountId
+                && x.Status == "posted"
+                && x.PostedDate >= from
+                && x.PostedDate <= today
+                && x.AmountMinorUnits < 0)
+            .Select(x => new PayBreakdownTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .ToListAsync(cancellationToken);
+        var transactionIds = transactions.Select(x => x.Id).ToList();
+        var internalTagName = DefaultBankingData.InternalTransferTagName.ToLowerInvariant();
+        var internalTransactionIds = await dbContext.BankTransactionTags
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
+            .Join(dbContext.TransactionTags.AsNoTracking().Where(x => x.TenantId == tenantId && x.Name.ToLower() == internalTagName),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => x.BankTransactionId)
+            .ToHashSetAsync(cancellationToken);
+        var savingsTransferIds = await GetSavingsTransferTransactionIds(tenantId, profile.SavingsAccountId, transactions, cancellationToken);
+
+        var savingsTransfer = transactions
+            .Where(x => savingsTransferIds.Contains(x.Id))
+            .Sum(x => Math.Abs(x.AmountMinorUnits));
+        var internalExpense = transactions
+            .Where(x => !savingsTransferIds.Contains(x.Id) && internalTransactionIds.Contains(x.Id))
+            .Sum(x => Math.Abs(x.AmountMinorUnits));
+        var personalExpense = transactions
+            .Where(x => !savingsTransferIds.Contains(x.Id) && !internalTransactionIds.Contains(x.Id))
+            .Sum(x => Math.Abs(x.AmountMinorUnits));
+        var remaining = profile.FortnightlyPayMinorUnits - personalExpense - internalExpense - savingsTransfer;
+
+        return new PayBreakdownDto(
+            from,
+            today,
+            profile.FortnightlyPayMinorUnits,
+            personalExpense,
+            internalExpense,
+            savingsTransfer,
+            remaining,
+            [
+                new PayBreakdownCategoryDto("personal", "Personal expense", personalExpense),
+                new PayBreakdownCategoryDto("internal", "Internal expense", internalExpense),
+                new PayBreakdownCategoryDto("savings", "Savings transfer", savingsTransfer)
+            ]);
+    }
+
+    private async Task<HashSet<Guid>> GetSavingsTransferTransactionIds(Guid tenantId, Guid? savingsAccountId, IReadOnlyList<PayBreakdownTransactionRow> transactions, CancellationToken cancellationToken)
+    {
+        if (savingsAccountId is null || transactions.Count == 0)
+        {
+            return [];
+        }
+
+        var from = transactions.Min(x => x.PostedDate);
+        var to = transactions.Max(x => x.PostedDate);
+        var savingsDeposits = await dbContext.BankTransactions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId
+                && x.BankAccountId == savingsAccountId.Value
+                && x.Status == "posted"
+                && x.PostedDate >= from.AddDays(-1)
+                && x.PostedDate <= to.AddDays(1)
+                && x.AmountMinorUnits > 0)
+            .Select(x => new PayBreakdownTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .ToListAsync(cancellationToken);
+        var matchedDepositIds = new HashSet<Guid>();
+        var savingsTransferIds = new HashSet<Guid>();
+
+        foreach (var transaction in transactions.OrderBy(x => x.PostedDate))
+        {
+            var matchingDeposit = savingsDeposits.FirstOrDefault(x =>
+                !matchedDepositIds.Contains(x.Id)
+                && Math.Abs(x.AmountMinorUnits) == Math.Abs(transaction.AmountMinorUnits)
+                && Math.Abs(x.PostedDate.DayNumber - transaction.PostedDate.DayNumber) <= 1);
+            if (matchingDeposit is null)
+            {
+                continue;
+            }
+
+            matchedDepositIds.Add(matchingDeposit.Id);
+            savingsTransferIds.Add(transaction.Id);
+        }
+
+        return savingsTransferIds;
+    }
+
     private static bool ShouldIncludeInternalTransfers(Guid? accountId, bool? includeInternalTransfers)
     {
         return accountId is not null && (includeInternalTransfers ?? true);
@@ -1407,6 +1645,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     }
 
     private sealed record OverviewTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
+
+    private sealed record PayBreakdownTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
 
     private sealed class OverviewMonthAccumulator(string key, string label)
     {

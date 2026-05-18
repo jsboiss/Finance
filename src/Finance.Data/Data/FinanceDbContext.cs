@@ -16,6 +16,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<TransactionTag> TransactionTags => Set<TransactionTag>();
     public DbSet<BankTransactionTag> BankTransactionTags => Set<BankTransactionTag>();
     public DbSet<OverviewMetricSnapshot> OverviewMetricSnapshots => Set<OverviewMetricSnapshot>();
+    public DbSet<PayBreakdownProfile> PayBreakdownProfiles => Set<PayBreakdownProfile>();
     public DbSet<MerchantTag> MerchantTags => Set<MerchantTag>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<SubscriptionTransaction> SubscriptionTransactions => Set<SubscriptionTransaction>();
@@ -58,6 +59,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         {
             x.HasIndex(y => new { y.TenantId, y.ScopeKey, y.SnapshotDate }).IsUnique();
             x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.SnapshotDate });
+        });
+        modelBuilder.Entity<PayBreakdownProfile>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.Name }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.MainAccountId });
         });
         modelBuilder.Entity<MerchantTag>(x =>
         {
