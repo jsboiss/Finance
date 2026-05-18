@@ -30,6 +30,11 @@ type SetTransactionTagsInput = {
   tagIds: string[]
 }
 
+type CreateMerchantRuleInput = {
+  merchantName: string
+  tagId: string
+}
+
 const tagColorOptions = ['#bae6fd', '#bbf7d0', '#fde68a', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e9d5ff']
 
 export function Transactions() {
@@ -75,7 +80,24 @@ export function Transactions() {
   })
   const deleteTag = useMutation({
     mutationFn: (tagId: string) => api<void>(`/api/tags/${tagId}`, { method: 'DELETE' }),
-    onSuccess: () => {
+    onMutate: async tagId => {
+      await queryClient.cancelQueries({ queryKey: ['tags'] })
+      await queryClient.cancelQueries({ queryKey: ['transactions'] })
+      await queryClient.cancelQueries({ queryKey: ['merchant-tags'] })
+      const previousTags = queryClient.getQueryData<TransactionTag[]>(['tags'])
+      const previousTransactions = queryClient.getQueryData<Transaction[]>(['transactions'])
+      const previousMerchantRules = queryClient.getQueryData<MerchantTagRule[]>(['merchant-tags'])
+      queryClient.setQueryData<TransactionTag[]>(['tags'], x => (x ?? []).filter(y => y.id !== tagId))
+      queryClient.setQueryData<Transaction[]>(['transactions'], x => (x ?? []).map(y => ({ ...y, tags: y.tags.filter(z => z.id !== tagId) })))
+      queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => (x ?? []).filter(y => y.tag.id !== tagId))
+      return { previousTags, previousTransactions, previousMerchantRules }
+    },
+    onError: (_error, _tagId, context) => {
+      queryClient.setQueryData(['tags'], context?.previousTags)
+      queryClient.setQueryData(['transactions'], context?.previousTransactions)
+      queryClient.setQueryData(['merchant-tags'], context?.previousMerchantRules)
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['tags'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
@@ -106,20 +128,57 @@ export function Transactions() {
     updateTransactionTags.mutate({ transactionId, tagIds })
   }
   const createMerchantRule = useMutation({
-    mutationFn: () => api<MerchantTagRule>('/api/merchant-tags', {
+    mutationFn: (input: CreateMerchantRuleInput) => api<MerchantTagRule>('/api/merchant-tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ merchantName, tagId: merchantTagId })
+      body: JSON.stringify(input)
     }),
-    onSuccess: () => {
+    onMutate: async input => {
+      await queryClient.cancelQueries({ queryKey: ['merchant-tags'] })
+      await queryClient.cancelQueries({ queryKey: ['transactions'] })
+      const previousMerchantRules = queryClient.getQueryData<MerchantTagRule[]>(['merchant-tags'])
+      const previousTransactions = queryClient.getQueryData<Transaction[]>(['transactions'])
+      const tag = queryClient.getQueryData<TransactionTag[]>(['tags'])?.find(x => x.id === input.tagId)
+      const optimisticRuleId = `pending-${crypto.randomUUID()}`
+      if (tag) {
+        const merchantKey = getMerchantKey(input.merchantName)
+        queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => [...(x ?? []), { id: optimisticRuleId, merchantName: input.merchantName, tag }])
+        queryClient.setQueryData<Transaction[]>(['transactions'], x => (x ?? []).map(y => {
+          if (!y.merchantName || getMerchantKey(y.merchantName) !== merchantKey || y.tags.some(z => z.id === tag.id)) {
+            return y
+          }
+
+          return { ...y, tags: [...y.tags, tag] }
+        }))
+      }
+
       setMerchantName('')
+      return { optimisticRuleId, previousMerchantRules, previousTransactions }
+    },
+    onError: (_error, _input, context) => {
+      queryClient.setQueryData(['merchant-tags'], context?.previousMerchantRules)
+      queryClient.setQueryData(['transactions'], context?.previousTransactions)
+    },
+    onSuccess: (rule, _input, context) => {
+      queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => (x ?? []).map(y => y.id === context.optimisticRuleId ? rule : y))
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
     }
   })
   const deleteMerchantRule = useMutation({
     mutationFn: (ruleId: string) => api<void>(`/api/merchant-tags/${ruleId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
+    onMutate: async ruleId => {
+      await queryClient.cancelQueries({ queryKey: ['merchant-tags'] })
+      const previousMerchantRules = queryClient.getQueryData<MerchantTagRule[]>(['merchant-tags'])
+      queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => (x ?? []).filter(y => y.id !== ruleId))
+      return { previousMerchantRules }
+    },
+    onError: (_error, _ruleId, context) => {
+      queryClient.setQueryData(['merchant-tags'], context?.previousMerchantRules)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
   })
   const helper = createColumnHelper<Transaction>()
   const table = useReactTable({
@@ -255,7 +314,7 @@ export function Transactions() {
                 <option value="">Select tag</option>
                 {(tags.data ?? []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
-              <Button disabled={!merchantName.trim() || !merchantTagId || createMerchantRule.isPending} onClick={() => createMerchantRule.mutate()} size="sm">
+              <Button disabled={!merchantName.trim() || !merchantTagId || createMerchantRule.isPending} onClick={() => createMerchantRule.mutate({ merchantName: merchantName.trim(), tagId: merchantTagId })} size="sm">
                 <Plus data-icon="inline-start" />
                 Rule
               </Button>
@@ -373,6 +432,10 @@ function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTa
   const selectedIds = new Set(selectedTagIds)
   const visibleSelectedTags = allTags.filter(x => selectedIds.has(x.id))
   useEffect(() => {
+    setSelectedTagIds(selectedTags.map(x => x.id))
+  }, [selectedTags])
+
+  useEffect(() => {
     if (!isOpen) {
       return
     }
@@ -466,6 +529,18 @@ function getStableIndex(value: string, length: number) {
   }
 
   return hash
+}
+
+function getMerchantKey(merchantName: string) {
+  const ignoredTokens = new Set(['au', 'aus', 'vi', 'pty', 'ltd', 'limited', 'australia', 'melbourne', 'sydney', 'brisbane', 'card', 'com'])
+  return merchantName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(x => x && !ignoredTokens.has(x))
+    .join(' ')
 }
 
 function DateRangeFilter({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {

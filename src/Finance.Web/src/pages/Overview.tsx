@@ -407,9 +407,6 @@ function AverageDailySpendTrend({ points, isLoading }: { points: { key: string; 
         <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
           <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
           {path && <path d={path} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
-          {chartPoints.map(x => (
-            <circle cx={x.left} cy={x.top} fill="var(--background)" key={x.key} r="3.5" stroke="oklch(0.62 0.14 160)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          ))}
         </svg>
         {chartPoints.map(x => (
           <div
