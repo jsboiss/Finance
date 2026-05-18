@@ -10,7 +10,7 @@ public interface IBankingQueries
 
     Task<IReadOnlyList<BalanceDto>> GetBalances(CancellationToken cancellationToken);
 
-    Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken);
+    Task<OverviewDto> GetOverview(Guid? accountId, string? dailyCashFlowRange, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 

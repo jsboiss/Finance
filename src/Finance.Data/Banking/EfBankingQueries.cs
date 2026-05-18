@@ -90,7 +90,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken)
+    public async Task<OverviewDto> GetOverview(Guid? accountId, string? dailyCashFlowRange, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -136,7 +136,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var monthRows = monthKeys.Select(x => new OverviewMonthAccumulator(x, FormatMonthLabel(x))).ToList();
         var monthMap = monthRows.ToDictionary(x => x.Key);
         var tagMap = new Dictionary<Guid, OverviewTagAccumulator>();
-        var dailyCashFlow = GetDailyCashFlowDays(currentMonthKey);
+        var dailyCashFlow = GetDailyCashFlowDays(today, dailyCashFlowRange);
         var dailyCashFlowMap = dailyCashFlow.ToDictionary(x => x.Key);
         var expensesCount = 0;
         var taggedCount = 0;
@@ -151,12 +151,16 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             }
 
             var monthKey = $"{transaction.PostedDate.Year:D4}-{transaction.PostedDate.Month:D2}";
-            if (monthKey == currentMonthKey && dailyCashFlowMap.TryGetValue(transaction.PostedDate.ToString("yyyy-MM-dd"), out var day))
+            if (monthKey == currentMonthKey && transaction.AmountMinorUnits > 0)
+            {
+                currentMonthIncome += transaction.AmountMinorUnits;
+            }
+
+            if (dailyCashFlowMap.TryGetValue(transaction.PostedDate.ToString("yyyy-MM-dd"), out var day))
             {
                 if (transaction.AmountMinorUnits > 0)
                 {
                     day.IncomeMinorUnits += transaction.AmountMinorUnits;
-                    currentMonthIncome += transaction.AmountMinorUnits;
                 }
 
                 if (transaction.AmountMinorUnits < 0)
@@ -1099,16 +1103,29 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return string.IsNullOrWhiteSpace(accountNumber) ? referenceName : $"{referenceName} - {accountNumber}";
     }
 
-    private static IReadOnlyList<OverviewDailyCashFlowAccumulator> GetDailyCashFlowDays(string monthKey)
+    private static IReadOnlyList<OverviewDailyCashFlowAccumulator> GetDailyCashFlowDays(DateOnly today, string? range)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var year = int.Parse(monthKey[..4]);
-        var month = int.Parse(monthKey[5..7]);
-        var daysInMonth = DateTime.DaysInMonth(year, month);
-        var visibleDays = today.Year == year && today.Month == month ? today.Day : daysInMonth;
-        return Enumerable.Range(1, visibleDays)
-            .Select(x => new OverviewDailyCashFlowAccumulator($"{monthKey}-{x:D2}", x))
+        var start = CleanDailyCashFlowRange(range) switch
+        {
+            "1w" => today.AddDays(-6),
+            "3m" => today.AddMonths(-3).AddDays(1),
+            _ => today.AddMonths(-1).AddDays(1)
+        };
+
+        return Enumerable.Range(0, today.DayNumber - start.DayNumber + 1)
+            .Select(x => start.AddDays(x))
+            .Select(x => new OverviewDailyCashFlowAccumulator(x.ToString("yyyy-MM-dd"), x.Day))
             .ToList();
+    }
+
+    private static string CleanDailyCashFlowRange(string? range)
+    {
+        return range?.Trim().ToLowerInvariant() switch
+        {
+            "1w" => "1w",
+            "3m" => "3m",
+            _ => "1m"
+        };
     }
 
     private static int GetElapsedDaysInMonth(string monthKey)

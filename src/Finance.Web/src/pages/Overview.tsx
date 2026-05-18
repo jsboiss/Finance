@@ -4,10 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { CircleDollarSign, Loader2, ReceiptText } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Metric } from '../components/Metric'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
 import type { Account, Overview as OverviewSummary, TransactionTag } from '../lib/types'
+
+type DailyCashFlowRange = '1w' | '1m' | '3m'
 
 type MonthSpend = {
   key: string
@@ -28,13 +31,26 @@ type TagSpend = {
 
 const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '#94a3b8' }
 const internalTransferTagName = 'Internal'
+const dailyCashFlowRanges: { value: DailyCashFlowRange; label: string; description: string }[] = [
+  { value: '1w', label: '1W', description: 'Last 7 days' },
+  { value: '1m', label: '1M', description: 'Last month' },
+  { value: '3m', label: '3M', description: 'Last 3 months' }
+]
 
 export function Overview() {
   const [overviewAccountId, setOverviewAccountId] = useState('all')
+  const [dailyCashFlowRange, setDailyCashFlowRange] = useState<DailyCashFlowRange>('1m')
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const overview = useQuery({
-    queryKey: ['overview', overviewAccountId],
-    queryFn: () => api<OverviewSummary>(`/api/overview${overviewAccountId === 'all' ? '' : `?accountId=${overviewAccountId}`}`)
+    queryKey: ['overview', overviewAccountId, dailyCashFlowRange],
+    queryFn: () => {
+      const params = new URLSearchParams({ dailyCashFlowRange })
+      if (overviewAccountId !== 'all') {
+        params.set('accountId', overviewAccountId)
+      }
+
+      return api<OverviewSummary>(`/api/overview?${params}`)
+    }
   })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
@@ -74,8 +90,25 @@ export function Overview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Daily cash flow</CardTitle>
-          <CardDescription>{analysis.currentMonthLabel}</CardDescription>
+          <div>
+            <CardTitle>Daily cash flow</CardTitle>
+            <CardDescription>{dailyCashFlowRanges.find(x => x.value === dailyCashFlowRange)?.description}</CardDescription>
+          </div>
+          <CardAction className="inline-flex rounded-md border border-border bg-muted p-1">
+            {dailyCashFlowRanges.map(x => (
+              <Button
+                aria-pressed={dailyCashFlowRange === x.value}
+                className={dailyCashFlowRange === x.value ? 'bg-background shadow-sm hover:bg-background' : 'text-muted-foreground'}
+                key={x.value}
+                onClick={() => setDailyCashFlowRange(x.value)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {x.label}
+              </Button>
+            ))}
+          </CardAction>
         </CardHeader>
         <CardContent>
           <DailyCashFlowBars days={analysis.dailyCashFlow} />
@@ -240,7 +273,7 @@ function DailyCashFlowBars({ days }: { days: { key: string; day: number; income:
                 {x.income > 0 && <div className="shrink-0 bg-[oklch(0.62_0.14_160)]" style={{ height: `${Math.max(incomeHeight, 3)}%` }} />}
                 {x.expenses > 0 && <div className="shrink-0 bg-[oklch(0.66_0.19_27)]" style={{ height: `${Math.max(expenseHeight, 3)}%` }} />}
                 <div className={`pointer-events-none absolute top-1/2 z-10 hidden min-w-40 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${tooltipPosition}`}>
-                  <p className="font-medium">Day {x.day}</p>
+                  <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
                   <div className="mt-1 flex items-center gap-2">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[oklch(0.62_0.14_160)]" />
                     <span>Income</span>
@@ -253,7 +286,7 @@ function DailyCashFlowBars({ days }: { days: { key: string; day: number; income:
                   </div>
                 </div>
               </div>
-              <p className="text-center text-[10px] text-muted-foreground">{x.day}</p>
+              <p className="text-center text-[10px] text-muted-foreground">{formatDailyCashFlowTick(x.key, x.day, days.length)}</p>
             </div>
           )
         })}
@@ -264,6 +297,18 @@ function DailyCashFlowBars({ days }: { days: { key: string; day: number; income:
       </div>
     </div>
   )
+}
+
+function formatDailyCashFlowDate(key: string) {
+  return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function formatDailyCashFlowTick(key: string, day: number, days: number) {
+  if (days <= 31 || day === 1) {
+    return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  }
+
+  return ''
 }
 
 function MonthlyBarSegment({ isFirstMonth, isLastMonth, tag, value, max }: { isFirstMonth: boolean; isLastMonth: boolean; tag: TagSpend; value: number; max: number }) {

@@ -73,9 +73,9 @@ public static class DashboardEndpoints
         return queries.GetBalances(cancellationToken);
     }
 
-    private static Task<OverviewDto> GetOverview(Guid? accountId, IBankingQueries queries, CancellationToken cancellationToken)
+    private static Task<OverviewDto> GetOverview(Guid? accountId, string? dailyCashFlowRange, IBankingQueries queries, CancellationToken cancellationToken)
     {
-        return queries.GetOverview(accountId, cancellationToken);
+        return queries.GetOverview(accountId, dailyCashFlowRange, cancellationToken);
     }
 
     private static Task<IReadOnlyList<TransactionDto>> GetTransactions(
