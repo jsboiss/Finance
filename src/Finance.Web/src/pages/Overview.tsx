@@ -317,8 +317,8 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
   const totalPoints = Math.max(allPoints.length, 1)
   const actualPoints = actual.map((x, index) => toTrajectoryChartPoint(x, index, totalPoints, width, height, padding, min, range))
   const projectionPoints = projection.map((x, index) => toTrajectoryChartPoint(x, actual.length + index, totalPoints, width, height, padding, min, range))
-  const lowerBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.lowerBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
-  const upperBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.upperBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
+  const lowerBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.lowerBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0, withdrawalMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
+  const upperBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.upperBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0, withdrawalMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
   const actualPath = toSmoothPath(actualPoints)
   const projectionStart = actualPoints.at(-1)
   const projectionPath = toSmoothPath(projectionStart ? [projectionStart, ...projectionPoints] : projectionPoints)
@@ -335,6 +335,10 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
     const left = index < 0 ? padding.left : toTrajectoryLeft(index, totalPoints, width, padding)
     return { ...x, left }
   })
+  const hoverPoints = [
+    ...actualPoints.filter(x => x.depositMinorUnits > 0 || x.interestMinorUnits > 0 || x.withdrawalMinorUnits > 0),
+    ...projectionPoints.filter((_x, index) => (index + 1) % 30 === 0 || index === projectionPoints.length - 1)
+  ]
 
   if (!trajectory && !isLoading) {
     return <p className="text-sm text-muted-foreground">No savings transactions found for this account yet.</p>
@@ -381,22 +385,33 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
             <p className="mt-1 text-muted-foreground">{formatSignedCurrency(projectedGrowth, currencyCode)} projected growth</p>
           </div>
         )}
-        {[...actualPoints, ...projectionPoints].filter((_x, index) => index % Math.max(1, Math.floor(allPoints.length / 12)) === 0 || index === allPoints.length - 1).map(x => (
-          <div className="group absolute z-20 h-9 w-9 -translate-x-1/2 -translate-y-1/2" key={`${x.key}-${x.left}`} style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}>
-            <div className="h-full w-full rounded-full" />
-            <div className={`pointer-events-none absolute top-1/2 z-30 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
-              <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
-              <p className="mt-1 font-semibold">{currency(x.balanceMinorUnits, trajectory?.currency ?? 'AUD')}</p>
-              <p className="mt-1 text-muted-foreground">Deposits {currency(x.depositMinorUnits, trajectory?.currency ?? 'AUD')} / Interest {currency(x.interestMinorUnits, trajectory?.currency ?? 'AUD')}</p>
-            </div>
-          </div>
-        ))}
+        {[...actualPoints, ...projectionPoints].map(x => <SavingsHoverPoint currencyCode={currencyCode} key={`${x.key}-${x.left}`} point={x} showMarker={false} />)}
+        {hoverPoints.map(x => <SavingsHoverPoint currencyCode={currencyCode} key={`marker-${x.key}-${x.left}`} point={x} showMarker />)}
       </div>
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.14_160)]" />History</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 border-t-2 border-dashed border-[oklch(0.5_0.18_250)]" />6-month projection</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded-sm bg-[oklch(0.5_0.18_250_/_0.18)]" />Deposit variance band</span>
       </div>
+    </div>
+  )
+}
+
+function SavingsHoverPoint({ currencyCode, point, showMarker }: { currencyCode: string; point: SavingsChartPoint; showMarker: boolean }) {
+  return (
+    <div className={showMarker ? 'group pointer-events-none absolute z-30 h-9 w-9 -translate-x-1/2 -translate-y-1/2' : 'group absolute z-20 h-10 w-10 -translate-x-1/2 -translate-y-1/2'} style={{ left: `${(point.left / 720) * 100}%`, top: `${(point.top / 260) * 100}%` }}>
+      {showMarker && <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm" />}
+      {!showMarker && <div className="h-full w-full rounded-full" />}
+      {!showMarker && (
+        <div className={`pointer-events-none absolute top-1/2 z-30 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${point.tooltipPosition}`}>
+          <p className="font-medium">{formatDailyCashFlowDate(point.key)}</p>
+          <p className="mt-1 font-semibold">{currency(point.balanceMinorUnits, currencyCode)}</p>
+          {point.depositMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Deposit {currency(point.depositMinorUnits, currencyCode)}</p>}
+          {point.interestMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Interest {currency(point.interestMinorUnits, currencyCode)}</p>}
+          {point.withdrawalMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Withdrawal {currency(point.withdrawalMinorUnits, currencyCode)}</p>}
+          {point.depositMinorUnits === 0 && point.interestMinorUnits === 0 && point.withdrawalMinorUnits === 0 && <p className="mt-1 text-muted-foreground">No movement</p>}
+        </div>
+      )}
     </div>
   )
 }
@@ -414,7 +429,7 @@ function SavingsMetric({ color, detail, label, value }: { color: string; detail:
   )
 }
 
-function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number; depositMinorUnits: number; interestMinorUnits: number }, index: number, total: number, width: number, height: number, padding: ChartPadding, min: number, range: number) {
+function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number; depositMinorUnits: number; interestMinorUnits: number; withdrawalMinorUnits: number }, index: number, total: number, width: number, height: number, padding: ChartPadding, min: number, range: number) {
   const left = toTrajectoryLeft(index, total, width, padding)
   const top = toTrajectoryTop(point.balanceMinorUnits, height, padding, min, range)
   const tooltipPosition = index === 0
@@ -424,6 +439,8 @@ function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number;
       : 'left-1/2 -translate-x-1/2'
   return { ...point, left, top, tooltipPosition }
 }
+
+type SavingsChartPoint = ReturnType<typeof toTrajectoryChartPoint>
 
 type ChartPadding = {
   top: number

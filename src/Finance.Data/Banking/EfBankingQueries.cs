@@ -305,17 +305,19 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 && x.Status == "posted"
                 && x.PostedDate >= from
                 && x.PostedDate <= today
-                && x.AmountMinorUnits > 0)
-            .Select(x => new SavingsTrajectoryTransactionRow(x.AmountMinorUnits, x.PostedDate, x.Description))
+                && x.AmountMinorUnits != 0)
+            .Select(x => new SavingsTrajectoryTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate, x.Description))
             .ToListAsync(cancellationToken);
+        var temporaryDepositIds = GetTemporarySavingsDepositIds(rows);
 
         var rowsByDate = rows
             .GroupBy(x => x.PostedDate)
             .ToDictionary(
                 x => x.Key,
                 x => new SavingsTrajectoryDay(
-                    x.Where(y => !IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits),
-                    x.Where(y => IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits)));
+                    x.Where(y => y.AmountMinorUnits > 0 && !IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits),
+                    x.Where(y => y.AmountMinorUnits > 0 && IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits),
+                    x.Where(y => y.AmountMinorUnits < 0).Sum(y => Math.Abs(y.AmountMinorUnits))));
         var actual = new List<SavingsTrajectoryPointDto>();
         var startingBalance = await dbContext.Balances
             .AsNoTracking()
@@ -329,13 +331,15 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         foreach (var date in Enumerable.Range(0, today.DayNumber - from.DayNumber + 1).Select(x => from.AddDays(x)))
         {
-            var day = rowsByDate.GetValueOrDefault(date, new SavingsTrajectoryDay(0, 0));
-            runningBalance += day.DepositMinorUnits + day.InterestMinorUnits;
-            actual.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), runningBalance, day.DepositMinorUnits, day.InterestMinorUnits));
+            var day = rowsByDate.GetValueOrDefault(date, new SavingsTrajectoryDay(0, 0, 0));
+            runningBalance += day.DepositMinorUnits + day.InterestMinorUnits - day.WithdrawalMinorUnits;
+            actual.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), runningBalance, day.DepositMinorUnits, day.InterestMinorUnits, day.WithdrawalMinorUnits));
             dailyBalances.Add(Math.Max(0, runningBalance));
         }
 
-        var totalDeposits = actual.Sum(x => x.DepositMinorUnits);
+        var totalDeposits = rows
+            .Where(x => x.AmountMinorUnits > 0 && !IsInterestTransaction(x.Description) && !temporaryDepositIds.Contains(x.Id))
+            .Sum(x => x.AmountMinorUnits);
         var totalInterest = actual.Sum(x => x.InterestMinorUnits);
         var elapsedDays = Math.Max(1, today.DayNumber - from.DayNumber + 1);
         var projectedDailyDeposits = totalDeposits / (decimal)elapsedDays;
@@ -349,7 +353,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             var projectedDeposit = (long)Math.Round(projectedDailyDeposits, MidpointRounding.AwayFromZero);
             var projectedInterest = (long)Math.Round(projectedBalance * projectedDailyInterestRate, MidpointRounding.AwayFromZero);
             projectedBalance += projectedDeposit + projectedInterest;
-            projection.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), projectedBalance, projectedDeposit, projectedInterest));
+            projection.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), projectedBalance, projectedDeposit, projectedInterest, 0));
         }
 
         return new SavingsTrajectoryDto(
@@ -1421,6 +1425,34 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             || description.Equals("Credit Interest", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static HashSet<Guid> GetTemporarySavingsDepositIds(IReadOnlyList<SavingsTrajectoryTransactionRow> rows)
+    {
+        var withdrawals = rows
+            .Where(x => x.AmountMinorUnits < 0)
+            .OrderBy(x => x.PostedDate)
+            .ToList();
+        var matchedWithdrawalIds = new HashSet<Guid>();
+        var temporaryDepositIds = new HashSet<Guid>();
+
+        foreach (var deposit in rows.Where(x => x.AmountMinorUnits > 0 && !IsInterestTransaction(x.Description)).OrderBy(x => x.PostedDate))
+        {
+            var matchingWithdrawal = withdrawals.FirstOrDefault(x =>
+                !matchedWithdrawalIds.Contains(x.Id)
+                && Math.Abs(x.AmountMinorUnits) == deposit.AmountMinorUnits
+                && x.PostedDate >= deposit.PostedDate
+                && x.PostedDate <= deposit.PostedDate.AddDays(90));
+            if (matchingWithdrawal is null)
+            {
+                continue;
+            }
+
+            matchedWithdrawalIds.Add(matchingWithdrawal.Id);
+            temporaryDepositIds.Add(deposit.Id);
+        }
+
+        return temporaryDepositIds;
+    }
+
     private static int GetElapsedDaysInMonth(string monthKey)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -1763,9 +1795,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
     private sealed record OverviewTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
 
-    private sealed record SavingsTrajectoryTransactionRow(long AmountMinorUnits, DateOnly PostedDate, string Description);
+    private sealed record SavingsTrajectoryTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate, string Description);
 
-    private sealed record SavingsTrajectoryDay(long DepositMinorUnits, long InterestMinorUnits);
+    private sealed record SavingsTrajectoryDay(long DepositMinorUnits, long InterestMinorUnits, long WithdrawalMinorUnits);
 
     private sealed record PayBreakdownTransactionRow(Guid Id, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 

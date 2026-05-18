@@ -72,7 +72,7 @@ public sealed record SavingsTrajectoryDto(
     IReadOnlyList<SavingsTrajectoryPointDto> Actual,
     IReadOnlyList<SavingsTrajectoryPointDto> Projection);
 
-public sealed record SavingsTrajectoryPointDto(string Key, long BalanceMinorUnits, long DepositMinorUnits, long InterestMinorUnits);
+public sealed record SavingsTrajectoryPointDto(string Key, long BalanceMinorUnits, long DepositMinorUnits, long InterestMinorUnits, long WithdrawalMinorUnits);
 
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
 

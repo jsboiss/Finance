@@ -129,6 +129,7 @@ export type SavingsTrajectoryPoint = {
   balanceMinorUnits: number
   depositMinorUnits: number
   interestMinorUnits: number
+  withdrawalMinorUnits: number
 }
 
 export type PayBreakdownProfile = {
