@@ -12,5 +12,5 @@ public interface IRedbarkImportService
 
     Task ReconcileFull(Guid tenantId, CancellationToken cancellationToken);
 
-    Task ProcessWebhook(Guid tenantId, string eventId, string eventType, string rawJson, CancellationToken cancellationToken);
+    Task ProcessWebhook(string eventId, string eventType, string rawJson, CancellationToken cancellationToken);
 }

@@ -17,7 +17,6 @@ public static class RedbarkWebhookEndpoints
         HttpRequest request,
         IOptions<RedbarkOptions> options,
         RedbarkWebhookVerifier verifier,
-        IConfiguration configuration,
         IRedbarkImportService imports,
         CancellationToken cancellationToken)
     {
@@ -31,16 +30,10 @@ public static class RedbarkWebhookEndpoints
             return Results.Unauthorized();
         }
 
-        var configuredTenantId = configuration["OwnerTenantId"];
-        if (!Guid.TryParse(configuredTenantId, out var tenantId))
-        {
-            return Results.Problem("OwnerTenantId is not configured.", statusCode: StatusCodes.Status500InternalServerError);
-        }
-
         using var document = JsonDocument.Parse(rawJson);
         var eventId = document.RootElement.GetProperty("id").GetString()!;
         var eventType = document.RootElement.GetProperty("type").GetString()!;
-        await imports.ProcessWebhook(tenantId, eventId, eventType, rawJson, cancellationToken);
+        await imports.ProcessWebhook(eventId, eventType, rawJson, cancellationToken);
         return Results.Accepted();
     }
 }

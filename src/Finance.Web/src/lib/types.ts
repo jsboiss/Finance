@@ -181,6 +181,35 @@ export type Tenant = {
   createdAt: string
 }
 
+export type TenantConnections = {
+  tenantId: string
+  tenantName: string
+  available: RedbarkConnectionOption[]
+  assigned: RedbarkConnectionAssignment[]
+}
+
+export type RedbarkConnectionOption = {
+  externalConnectionId: string
+  institutionName: string
+  isAssignedToTenant: boolean
+  assignedTenantName?: string
+}
+
+export type RedbarkConnectionAssignment = {
+  externalConnectionId: string
+  institutionName: string
+  createdAt: string
+}
+
+export type TenantAdminAccount = {
+  id: string
+  name: string
+  customName: string
+  accountNumber: string
+  institutionName: string
+  currency: string
+}
+
 export type CreateApiClientResponse = {
   client: ApiClient
   apiKey: string

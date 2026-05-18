@@ -43,6 +43,15 @@ public sealed class BankConnection
     public JsonDocument RawJson { get; set; } = JsonDocument.Parse("{}");
 }
 
+public sealed class RedbarkConnectionAssignment
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string ExternalConnectionId { get; set; } = "";
+    public string InstitutionName { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class BankAccount
 {
     public Guid Id { get; set; } = Guid.NewGuid();

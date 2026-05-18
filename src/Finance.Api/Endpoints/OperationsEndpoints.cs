@@ -96,7 +96,7 @@ public static class OperationsEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task DeleteTenantData(Guid tenantId, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    public static async Task DeleteTenantData(Guid tenantId, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
         await dbContext.BankTransactionTags.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.SubscriptionTransactions.Where(x => x.TenantId == tenantId).ExecuteDeleteAsync(cancellationToken);

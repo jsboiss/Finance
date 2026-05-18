@@ -8,6 +8,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<TenantMember> TenantMembers => Set<TenantMember>();
     public DbSet<ApiClient> ApiClients => Set<ApiClient>();
+    public DbSet<RedbarkConnectionAssignment> RedbarkConnectionAssignments => Set<RedbarkConnectionAssignment>();
     public DbSet<BankConnection> BankConnections => Set<BankConnection>();
     public DbSet<BankAccount> BankAccounts => Set<BankAccount>();
     public DbSet<Balance> Balances => Set<Balance>();
@@ -28,6 +29,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         modelBuilder.Entity<AppUser>(x => x.HasIndex(y => y.Email).IsUnique());
         modelBuilder.Entity<TenantMember>(x => x.HasIndex(y => new { y.TenantId, y.UserId }).IsUnique());
         modelBuilder.Entity<ApiClient>(x => x.HasIndex(y => y.KeyHash).IsUnique());
+        modelBuilder.Entity<RedbarkConnectionAssignment>(x =>
+        {
+            x.HasIndex(y => y.ExternalConnectionId).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.ExternalConnectionId }).IsUnique();
+        });
         modelBuilder.Entity<BankConnection>(x => x.HasIndex(y => new { y.TenantId, y.ExternalConnectionId }).IsUnique());
         modelBuilder.Entity<BankAccount>(x => x.HasIndex(y => new { y.TenantId, y.ExternalAccountId }).IsUnique());
         modelBuilder.Entity<Balance>(x => x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.AsOf }).IsUnique());

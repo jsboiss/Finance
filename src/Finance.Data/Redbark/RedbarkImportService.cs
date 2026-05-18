@@ -35,8 +35,9 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         return ImportRange(tenantId, DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(-24)), DateOnly.FromDateTime(DateTime.UtcNow), "full-reconciliation", cancellationToken);
     }
 
-    public async Task ProcessWebhook(Guid tenantId, string eventId, string eventType, string rawJson, CancellationToken cancellationToken)
+    public async Task ProcessWebhook(string eventId, string eventType, string rawJson, CancellationToken cancellationToken)
     {
+        var tenantId = await ResolveWebhookTenant(eventType, rawJson, cancellationToken);
         var webhookEvent = await dbContext.WebhookEvents.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ExternalEventId == eventId, cancellationToken);
         if (webhookEvent?.ProcessedAt is not null)
         {
@@ -60,6 +61,46 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
         webhookEvent.ProcessedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<Guid> ResolveWebhookTenant(string eventType, string rawJson, CancellationToken cancellationToken)
+    {
+        if (eventType != "transactions.synced")
+        {
+            throw new InvalidOperationException($"Webhook type '{eventType}' cannot be routed to a tenant.");
+        }
+
+        using var document = JsonDocument.Parse(rawJson);
+        var data = document.RootElement.GetProperty("data");
+        var externalAccountIds = data.GetProperty("new").EnumerateArray()
+            .Concat(data.GetProperty("updated").EnumerateArray())
+            .Select(x => GetNullableString(x, "account_id"))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToList();
+
+        if (externalAccountIds.Count == 0)
+        {
+            throw new InvalidOperationException("Webhook did not include any account IDs that can be routed to a tenant.");
+        }
+
+        var tenantIds = await dbContext.BankAccounts
+            .Where(x => externalAccountIds.Contains(x.ExternalAccountId))
+            .Select(x => x.TenantId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (tenantIds.Count == 1)
+        {
+            return tenantIds[0];
+        }
+
+        if (tenantIds.Count > 1)
+        {
+            throw new InvalidOperationException("Webhook referenced accounts from multiple tenants.");
+        }
+
+        throw new InvalidOperationException($"Webhook referenced unknown account IDs: {string.Join(", ", externalAccountIds)}. Assign the Redbark connection and run account discovery first.");
     }
 
     private async Task ProcessTransactionWebhook(Guid tenantId, string rawJson, CancellationToken cancellationToken)
@@ -115,7 +156,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         try
         {
             var importedCount = 0;
-            var connections = await redbarkClient.GetConnections(tenantId, cancellationToken);
+            var connections = await GetAssignedConnections(tenantId, cancellationToken);
             foreach (var connection in connections)
             {
                 var bankConnection = await UpsertConnection(tenantId, connection, cancellationToken);
@@ -175,7 +216,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         try
         {
             var importedCount = 0;
-            var connections = await redbarkClient.GetConnections(tenantId, cancellationToken);
+            var connections = await GetAssignedConnections(tenantId, cancellationToken);
             foreach (var connection in connections)
             {
                 var bankConnection = await UpsertConnection(tenantId, connection, cancellationToken);
@@ -211,6 +252,29 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private async Task<IReadOnlyList<RedbarkConnectionDto>> GetAssignedConnections(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var assignments = await dbContext.RedbarkConnectionAssignments
+            .Where(x => x.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        if (assignments.Count == 0)
+        {
+            throw new InvalidOperationException("No Redbark connections are assigned to this tenant.");
+        }
+
+        var assignmentIds = assignments.Select(x => x.ExternalConnectionId).ToHashSet(StringComparer.Ordinal);
+        var connections = await redbarkClient.GetConnections(tenantId, cancellationToken);
+        var assignedConnections = connections.Where(x => assignmentIds.Contains(x.Id)).ToList();
+        var missingConnectionIds = assignmentIds.Except(assignedConnections.Select(x => x.Id)).ToList();
+        if (missingConnectionIds.Count > 0)
+        {
+            throw new InvalidOperationException($"Assigned Redbark connections were not returned by Redbark: {string.Join(", ", missingConnectionIds)}.");
+        }
+
+        return assignedConnections;
     }
 
     private async Task ImportAccountRange(Guid tenantId, Guid accountId, DateOnly from, DateOnly to, CancellationToken cancellationToken)

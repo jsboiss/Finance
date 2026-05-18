@@ -26,6 +26,7 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapDashboardEndpoints();
 app.MapOperationsEndpoints();
+app.MapAdminTenantEndpoints();
 app.MapExternalApiEndpoints();
 app.MapRedbarkWebhookEndpoints();
 app.MapDashboardStaticFiles();
