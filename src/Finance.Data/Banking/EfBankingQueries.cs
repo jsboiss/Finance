@@ -286,7 +286,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var from = today.AddMonths(-6).AddDays(1);
-        var projectionTo = today.AddMonths(3);
+        var projectionTo = today.AddMonths(6);
         var account = await dbContext.BankAccounts
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.Id == accountId)
@@ -317,27 +317,37 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                     x.Where(y => !IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits),
                     x.Where(y => IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits)));
         var actual = new List<SavingsTrajectoryPointDto>();
-        long runningBalance = 0;
+        var startingBalance = await dbContext.Balances
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.BankAccountId == accountId)
+            .OrderByDescending(x => x.AsOf)
+            .Select(x => x.CurrentMinorUnits)
+            .FirstOrDefaultAsync(cancellationToken) ?? 0;
+        var historicalContributionBalance = rows.Sum(x => x.AmountMinorUnits);
+        var runningBalance = startingBalance - historicalContributionBalance;
+        var dailyBalances = new List<long>();
 
         foreach (var date in Enumerable.Range(0, today.DayNumber - from.DayNumber + 1).Select(x => from.AddDays(x)))
         {
             var day = rowsByDate.GetValueOrDefault(date, new SavingsTrajectoryDay(0, 0));
             runningBalance += day.DepositMinorUnits + day.InterestMinorUnits;
             actual.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), runningBalance, day.DepositMinorUnits, day.InterestMinorUnits));
+            dailyBalances.Add(Math.Max(0, runningBalance));
         }
 
         var totalDeposits = actual.Sum(x => x.DepositMinorUnits);
         var totalInterest = actual.Sum(x => x.InterestMinorUnits);
         var elapsedDays = Math.Max(1, today.DayNumber - from.DayNumber + 1);
         var projectedDailyDeposits = totalDeposits / (decimal)elapsedDays;
-        var projectedDailyInterest = totalInterest / (decimal)elapsedDays;
+        var balanceDays = Math.Max(1, dailyBalances.Sum(x => (decimal)x));
+        var projectedDailyInterestRate = totalInterest > 0 ? totalInterest / balanceDays : 0;
         var projection = new List<SavingsTrajectoryPointDto>();
         var projectedBalance = runningBalance;
 
         foreach (var date in Enumerable.Range(1, projectionTo.DayNumber - today.DayNumber).Select(x => today.AddDays(x)))
         {
             var projectedDeposit = (long)Math.Round(projectedDailyDeposits, MidpointRounding.AwayFromZero);
-            var projectedInterest = (long)Math.Round(projectedDailyInterest, MidpointRounding.AwayFromZero);
+            var projectedInterest = (long)Math.Round(projectedBalance * projectedDailyInterestRate, MidpointRounding.AwayFromZero);
             projectedBalance += projectedDeposit + projectedInterest;
             projection.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), projectedBalance, projectedDeposit, projectedInterest));
         }
@@ -348,7 +358,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             totalDeposits,
             totalInterest,
             (long)Math.Round(projectedDailyDeposits * 30, MidpointRounding.AwayFromZero),
-            (long)Math.Round(projectedDailyInterest * 30, MidpointRounding.AwayFromZero),
+            projection.Take(30).Sum(x => x.InterestMinorUnits),
             actual,
             projection);
     }

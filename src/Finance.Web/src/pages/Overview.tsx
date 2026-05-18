@@ -298,18 +298,43 @@ function OverviewLoading() {
 function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: SavingsTrajectorySummary; isLoading: boolean }) {
   const width = 720
   const height = 260
-  const padding = 24
+  const padding = { top: 22, right: 72, bottom: 34, left: 72 }
   const actual = trajectory?.actual ?? []
   const projection = trajectory?.projection ?? []
   const allPoints = [...actual, ...projection]
-  const max = Math.max(...allPoints.map(x => x.balanceMinorUnits), 1)
-  const min = Math.min(...allPoints.map(x => x.balanceMinorUnits), 0)
+  const bandPoints = projection.map(x => {
+    const startingBalance = actual.at(-1)?.balanceMinorUnits ?? 0
+    const projectedGrowth = x.balanceMinorUnits - startingBalance
+    return {
+      key: x.key,
+      lowerBalanceMinorUnits: startingBalance + Math.round(projectedGrowth * 0.75),
+      upperBalanceMinorUnits: startingBalance + Math.round(projectedGrowth * 1.25)
+    }
+  })
+  const max = Math.max(...allPoints.map(x => x.balanceMinorUnits), ...bandPoints.map(x => x.upperBalanceMinorUnits), 1)
+  const min = Math.min(...allPoints.map(x => x.balanceMinorUnits), ...bandPoints.map(x => x.lowerBalanceMinorUnits), 0)
   const range = Math.max(max - min, 1)
-  const actualPoints = actual.map((x, index) => toTrajectoryChartPoint(x, index, Math.max(allPoints.length, 1), width, height, padding, min, range))
-  const projectionPoints = projection.map((x, index) => toTrajectoryChartPoint(x, actual.length + index, Math.max(allPoints.length, 1), width, height, padding, min, range))
-  const actualPath = toPath(actualPoints)
+  const totalPoints = Math.max(allPoints.length, 1)
+  const actualPoints = actual.map((x, index) => toTrajectoryChartPoint(x, index, totalPoints, width, height, padding, min, range))
+  const projectionPoints = projection.map((x, index) => toTrajectoryChartPoint(x, actual.length + index, totalPoints, width, height, padding, min, range))
+  const lowerBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.lowerBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
+  const upperBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.upperBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
+  const actualPath = toSmoothPath(actualPoints)
   const projectionStart = actualPoints.at(-1)
-  const projectionPath = toPath(projectionStart ? [projectionStart, ...projectionPoints] : projectionPoints)
+  const projectionPath = toSmoothPath(projectionStart ? [projectionStart, ...projectionPoints] : projectionPoints)
+  const bandPath = projectionStart && lowerBandPoints.length > 0 && upperBandPoints.length > 0
+    ? toBandPath([projectionStart, ...upperBandPoints], [...lowerBandPoints].reverse().concat(projectionStart))
+    : ''
+  const todayLeft = projectionStart?.left
+  const finalPoint = projectionPoints.at(-1)
+  const projectedGrowth = finalPoint && projectionStart ? finalPoint.balanceMinorUnits - projectionStart.balanceMinorUnits : 0
+  const currencyCode = trajectory?.currency ?? 'AUD'
+  const yTicks = getCurrencyTicks(min, max, 4)
+  const monthTicks = getMonthTicks(allPoints).map(x => {
+    const index = allPoints.findIndex(y => y.key === x.key)
+    const left = index < 0 ? padding.left : toTrajectoryLeft(index, totalPoints, width, padding)
+    return { ...x, left }
+  })
 
   if (!trajectory && !isLoading) {
     return <p className="text-sm text-muted-foreground">No savings transactions found for this account yet.</p>
@@ -317,22 +342,49 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
 
   return (
     <div className={isLoading ? 'space-y-4 opacity-60 transition-opacity' : 'space-y-4 transition-opacity'}>
-      <div className="grid gap-3 sm:grid-cols-4">
-        <ProgressRow color="oklch(0.62 0.14 160)" detail="Historical deposits, excluding interest" label="Deposits" value={currency(trajectory?.totalDepositsMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
-        <ProgressRow color="oklch(0.7 0.13 85)" detail="Bonus Interest and Credit Interest" label="Interest" value={currency(trajectory?.totalInterestMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
-        <ProgressRow color="oklch(0.5 0.18 250)" detail="Projected from past deposit pace" label="Monthly deposits" value={currency(trajectory?.projectedMonthlyDepositsMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
-        <ProgressRow color="oklch(0.56 0.15 305)" detail="Projected from past interest accrual" label="Monthly interest" value={currency(trajectory?.projectedMonthlyInterestMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SavingsMetric label="Deposits" detail="Historical, excluding interest" value={currency(trajectory?.totalDepositsMinorUnits ?? 0, currencyCode)} color="oklch(0.62 0.14 160)" />
+        <SavingsMetric label="Interest" detail="Bonus and credit interest" value={currency(trajectory?.totalInterestMinorUnits ?? 0, currencyCode)} color="oklch(0.7 0.13 85)" />
+        <SavingsMetric label="Projected deposits" detail="Next 30 days" value={currency(trajectory?.projectedMonthlyDepositsMinorUnits ?? 0, currencyCode)} color="oklch(0.5 0.18 250)" />
+        <SavingsMetric label="Projected interest" detail="Next 30 days, compounding" value={currency(trajectory?.projectedMonthlyInterestMinorUnits ?? 0, currencyCode)} color="oklch(0.56 0.15 305)" />
       </div>
-      <div className="relative h-72 overflow-hidden rounded-md border border-border bg-muted">
-        <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
-          <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
-          {actualPath && <path d={actualPath} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
-          {projectionPath && <path d={projectionPath} fill="none" stroke="oklch(0.5 0.18 250)" strokeDasharray="7 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
-        </svg>
+      <div className="relative h-[22rem]">
+        <div className="absolute inset-0 overflow-hidden rounded-md border border-border bg-muted">
+          <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+            {yTicks.map(x => {
+              const top = toTrajectoryTop(x, height, padding, min, range)
+              return <g key={x}>
+                <path d={`M ${padding.left} ${top} H ${width - padding.right}`} fill="none" stroke="currentColor" strokeOpacity="0.08" />
+                <text fill="currentColor" fontSize="11" opacity="0.55" x={padding.left - 10} y={top + 4} textAnchor="end">{formatCompactCurrency(x, currencyCode)}</text>
+              </g>
+            })}
+            {monthTicks.map(x => (
+              <g key={x.key}>
+                <path d={`M ${x.left} ${padding.top} V ${height - padding.bottom}`} fill="none" stroke="currentColor" strokeOpacity="0.05" />
+                <text fill="currentColor" fontSize="11" opacity="0.55" x={x.left} y={height - 10} textAnchor="middle">{x.label}</text>
+              </g>
+            ))}
+            {todayLeft && <path d={`M ${todayLeft} ${padding.top} V ${height - padding.bottom}`} fill="none" stroke="currentColor" strokeDasharray="4 5" strokeOpacity="0.35" />}
+            {bandPath && <path d={bandPath} fill="oklch(0.5 0.18 250 / 0.16)" stroke="none" />}
+            {actualPath && <path d={actualPath} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+            {projectionPath && <path d={projectionPath} fill="none" stroke="oklch(0.5 0.18 250)" strokeDasharray="7 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+            {todayLeft && <text fill="currentColor" fontSize="11" opacity="0.62" x={todayLeft + 8} y={padding.top + 14}>Today</text>}
+          </svg>
+        </div>
+        {finalPoint && (
+          <div
+            className="pointer-events-none absolute z-10 max-w-48 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg"
+            style={{ left: `${Math.min(78, Math.max(48, (finalPoint.left / width) * 100))}%`, top: `${Math.max(8, ((finalPoint.top / height) * 100) - 8)}%` }}
+          >
+            <p className="font-medium">6-month projection</p>
+            <p className="mt-1 text-base font-semibold">{currency(finalPoint.balanceMinorUnits, currencyCode)}</p>
+            <p className="mt-1 text-muted-foreground">{formatSignedCurrency(projectedGrowth, currencyCode)} projected growth</p>
+          </div>
+        )}
         {[...actualPoints, ...projectionPoints].filter((_x, index) => index % Math.max(1, Math.floor(allPoints.length / 12)) === 0 || index === allPoints.length - 1).map(x => (
-          <div className="group absolute z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2" key={`${x.key}-${x.left}`} style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}>
+          <div className="group absolute z-20 h-9 w-9 -translate-x-1/2 -translate-y-1/2" key={`${x.key}-${x.left}`} style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}>
             <div className="h-full w-full rounded-full" />
-            <div className={`pointer-events-none absolute top-1/2 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
+            <div className={`pointer-events-none absolute top-1/2 z-30 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
               <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
               <p className="mt-1 font-semibold">{currency(x.balanceMinorUnits, trajectory?.currency ?? 'AUD')}</p>
               <p className="mt-1 text-muted-foreground">Deposits {currency(x.depositMinorUnits, trajectory?.currency ?? 'AUD')} / Interest {currency(x.interestMinorUnits, trajectory?.currency ?? 'AUD')}</p>
@@ -342,15 +394,29 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
       </div>
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.14_160)]" />History</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 border-t-2 border-dashed border-[oklch(0.5_0.18_250)]" />Projection</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 border-t-2 border-dashed border-[oklch(0.5_0.18_250)]" />6-month projection</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 rounded-sm bg-[oklch(0.5_0.18_250_/_0.18)]" />Deposit variance band</span>
       </div>
     </div>
   )
 }
 
-function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number; depositMinorUnits: number; interestMinorUnits: number }, index: number, total: number, width: number, height: number, padding: number, min: number, range: number) {
-  const left = total <= 1 ? padding : padding + (index / (total - 1)) * (width - padding * 2)
-  const top = height - padding - ((point.balanceMinorUnits - min) / range) * (height - padding * 2)
+function SavingsMetric({ color, detail, label, value }: { color: string; detail: string; label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/50 p-3">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <span>{label}</span>
+      </div>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  )
+}
+
+function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number; depositMinorUnits: number; interestMinorUnits: number }, index: number, total: number, width: number, height: number, padding: ChartPadding, min: number, range: number) {
+  const left = toTrajectoryLeft(index, total, width, padding)
+  const top = toTrajectoryTop(point.balanceMinorUnits, height, padding, min, range)
   const tooltipPosition = index === 0
     ? 'left-0'
     : index === total - 1
@@ -359,8 +425,65 @@ function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number;
   return { ...point, left, top, tooltipPosition }
 }
 
-function toPath(points: { left: number; top: number }[]) {
-  return points.map((x, index) => `${index === 0 ? 'M' : 'L'} ${x.left} ${x.top}`).join(' ')
+type ChartPadding = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+function toTrajectoryLeft(index: number, total: number, width: number, padding: ChartPadding) {
+  return total <= 1 ? padding.left : padding.left + (index / (total - 1)) * (width - padding.left - padding.right)
+}
+
+function toTrajectoryTop(value: number, height: number, padding: ChartPadding, min: number, range: number) {
+  return height - padding.bottom - ((value - min) / range) * (height - padding.top - padding.bottom)
+}
+
+function toSmoothPath(points: { left: number; top: number }[]) {
+  if (points.length <= 1) {
+    return points.length === 1 ? `M ${points[0].left} ${points[0].top}` : ''
+  }
+
+  return points.reduce((path, point, index) => {
+    if (index === 0) {
+      return `M ${point.left} ${point.top}`
+    }
+
+    const previous = points[index - 1]
+    const controlX = (previous.left + point.left) / 2
+    return `${path} C ${controlX} ${previous.top}, ${controlX} ${point.top}, ${point.left} ${point.top}`
+  }, '')
+}
+
+function toBandPath(upperPoints: { left: number; top: number }[], lowerPoints: { left: number; top: number }[]) {
+  const upperPath = toSmoothPath(upperPoints)
+  const lowerPath = lowerPoints.map((x, index) => `${index === 0 ? 'L' : 'L'} ${x.left} ${x.top}`).join(' ')
+  return upperPath && lowerPath ? `${upperPath} ${lowerPath} Z` : ''
+}
+
+function getCurrencyTicks(min: number, max: number, count: number) {
+  const range = Math.max(max - min, 1)
+  return Array.from({ length: count }, (_x, index) => Math.round(min + (range / (count - 1)) * index))
+}
+
+function getMonthTicks(points: { key: string }[]) {
+  const ticks = new Map<string, { key: string; label: string }>()
+  for (const point of points) {
+    const monthKey = point.key.slice(0, 7)
+    if (!ticks.has(monthKey)) {
+      ticks.set(monthKey, {
+        key: point.key,
+        label: new Date(`${point.key}T00:00:00`).toLocaleDateString(undefined, { month: 'short' })
+      })
+    }
+  }
+
+  return [...ticks.values()]
+}
+
+function formatCompactCurrency(value: number, code: string) {
+  return new Intl.NumberFormat(undefined, { currency: code, maximumFractionDigits: 0, notation: 'compact', style: 'currency' }).format(value / 100)
 }
 
 function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {
@@ -497,19 +620,21 @@ function AverageDailySpendTrend({ points, isLoading }: { points: { key: string; 
 
   return (
     <div className={isLoading ? 'space-y-3 opacity-60 transition-opacity' : 'space-y-3 transition-opacity'}>
-      <div className="relative h-64 overflow-hidden rounded-md border border-border bg-muted">
-        <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
-          <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
-          {path && <path d={path} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
-        </svg>
+      <div className="relative h-64">
+        <div className="absolute inset-0 overflow-hidden rounded-md border border-border bg-muted">
+          <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+            <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
+            {path && <path d={path} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+          </svg>
+        </div>
         {chartPoints.map(x => (
           <div
-            className="group absolute z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2"
+            className="group absolute z-20 h-9 w-9 -translate-x-1/2 -translate-y-1/2"
             key={x.key}
             style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}
           >
             <div className="h-full w-full rounded-full" />
-            <div className={`pointer-events-none absolute top-1/2 hidden min-w-40 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
+            <div className={`pointer-events-none absolute top-1/2 z-30 hidden min-w-40 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
               <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
               <div className="mt-1 flex items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[oklch(0.62_0.14_160)]" />
