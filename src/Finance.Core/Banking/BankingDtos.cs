@@ -86,7 +86,9 @@ public sealed record PayBreakdownDto(
     long RemainingMinorUnits,
     IReadOnlyList<PayBreakdownCategoryDto> Categories);
 
-public sealed record PayBreakdownCategoryDto(string Key, string Label, long AmountMinorUnits);
+public sealed record PayBreakdownCategoryDto(string Key, string Label, long AmountMinorUnits, IReadOnlyList<PayBreakdownTransactionDto> Transactions);
+
+public sealed record PayBreakdownTransactionDto(Guid Id, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 
 public sealed record CreatePayBreakdownProfileRequest(string Name, Guid MainAccountId, Guid? SavingsAccountId, long FortnightlyPayMinorUnits, string? Currency);
 

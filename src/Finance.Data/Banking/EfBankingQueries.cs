@@ -1502,7 +1502,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 && x.PostedDate >= from
                 && x.PostedDate <= today
                 && x.AmountMinorUnits < 0)
-            .Select(x => new PayBreakdownTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .Select(x => new PayBreakdownTransactionRow(x.Id, x.Description, x.MerchantName, x.AmountMinorUnits, x.Currency, x.PostedDate))
             .ToListAsync(cancellationToken);
         var transactionIds = transactions.Select(x => x.Id).ToList();
         var internalTagName = DefaultBankingData.InternalTransferTagName.ToLowerInvariant();
@@ -1516,15 +1516,12 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToHashSetAsync(cancellationToken);
         var savingsTransferIds = await GetSavingsTransferTransactionIds(tenantId, profile.SavingsAccountId, transactions, cancellationToken);
 
-        var savingsTransfer = transactions
-            .Where(x => savingsTransferIds.Contains(x.Id))
-            .Sum(x => Math.Abs(x.AmountMinorUnits));
-        var internalExpense = transactions
-            .Where(x => !savingsTransferIds.Contains(x.Id) && internalTransactionIds.Contains(x.Id))
-            .Sum(x => Math.Abs(x.AmountMinorUnits));
-        var personalExpense = transactions
-            .Where(x => !savingsTransferIds.Contains(x.Id) && !internalTransactionIds.Contains(x.Id))
-            .Sum(x => Math.Abs(x.AmountMinorUnits));
+        var savingsTransferTransactions = transactions.Where(x => savingsTransferIds.Contains(x.Id)).OrderByDescending(x => x.PostedDate).ToList();
+        var internalExpenseTransactions = transactions.Where(x => !savingsTransferIds.Contains(x.Id) && internalTransactionIds.Contains(x.Id)).OrderByDescending(x => x.PostedDate).ToList();
+        var personalExpenseTransactions = transactions.Where(x => !savingsTransferIds.Contains(x.Id) && !internalTransactionIds.Contains(x.Id)).OrderByDescending(x => x.PostedDate).ToList();
+        var savingsTransfer = savingsTransferTransactions.Sum(x => Math.Abs(x.AmountMinorUnits));
+        var internalExpense = internalExpenseTransactions.Sum(x => Math.Abs(x.AmountMinorUnits));
+        var personalExpense = personalExpenseTransactions.Sum(x => Math.Abs(x.AmountMinorUnits));
         var remaining = profile.FortnightlyPayMinorUnits - personalExpense - internalExpense - savingsTransfer;
 
         return new PayBreakdownDto(
@@ -1537,10 +1534,17 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             savingsTransfer,
             remaining,
             [
-                new PayBreakdownCategoryDto("personal", "Personal expense", personalExpense),
-                new PayBreakdownCategoryDto("internal", "Internal expense", internalExpense),
-                new PayBreakdownCategoryDto("savings", "Savings transfer", savingsTransfer)
+                new PayBreakdownCategoryDto("personal", "Personal expense", personalExpense, ToPayBreakdownTransactions(personalExpenseTransactions)),
+                new PayBreakdownCategoryDto("internal", "Internal expense", internalExpense, ToPayBreakdownTransactions(internalExpenseTransactions)),
+                new PayBreakdownCategoryDto("savings", "Savings transfer", savingsTransfer, ToPayBreakdownTransactions(savingsTransferTransactions))
             ]);
+    }
+
+    private static IReadOnlyList<PayBreakdownTransactionDto> ToPayBreakdownTransactions(IReadOnlyList<PayBreakdownTransactionRow> transactions)
+    {
+        return transactions
+            .Select(x => new PayBreakdownTransactionDto(x.Id, x.Description, x.MerchantName, Math.Abs(x.AmountMinorUnits), x.Currency, x.PostedDate))
+            .ToList();
     }
 
     private async Task<DateOnly?> GetLatestPayDate(Guid tenantId, PayBreakdownProfile profile, DateOnly today, CancellationToken cancellationToken)
@@ -1583,7 +1587,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 && x.PostedDate >= from.AddDays(-1)
                 && x.PostedDate <= to.AddDays(1)
                 && x.AmountMinorUnits > 0)
-            .Select(x => new PayBreakdownTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .Select(x => new PayBreakdownTransactionRow(x.Id, x.Description, x.MerchantName, x.AmountMinorUnits, x.Currency, x.PostedDate))
             .ToListAsync(cancellationToken);
         var matchedDepositIds = new HashSet<Guid>();
         var savingsTransferIds = new HashSet<Guid>();
@@ -1671,7 +1675,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
     private sealed record OverviewTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
 
-    private sealed record PayBreakdownTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
+    private sealed record PayBreakdownTransactionRow(Guid Id, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 
     private sealed class OverviewMonthAccumulator(string key, string label)
     {

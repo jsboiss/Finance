@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Edit3, Plus, Trash2, WalletCards } from 'lucide-react'
+import { ChevronDown, Edit3, Plus, Trash2, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Header } from '../components/Header'
 import { Badge } from '../components/ui/badge'
@@ -155,6 +155,7 @@ export function PayBreakdowns() {
 }
 
 function PayBreakdownCard({ profile, onDelete, onEdit }: { profile: PayBreakdownProfile; onDelete: (profile: PayBreakdownProfile) => void; onEdit: (profile: PayBreakdownProfile) => void }) {
+  const [openCategoryKey, setOpenCategoryKey] = useState<string | null>(null)
   const totalAllocated = profile.breakdown.personalExpenseMinorUnits + profile.breakdown.internalExpenseMinorUnits + profile.breakdown.savingsTransferMinorUnits
   const max = Math.max(profile.breakdown.payMinorUnits, totalAllocated, 1)
 
@@ -185,14 +186,38 @@ function PayBreakdownCard({ profile, onDelete, onEdit }: { profile: PayBreakdown
         </div>
         <div className="space-y-3">
           {profile.breakdown.categories.map(x => (
-            <div className="space-y-1.5" key={x.key}>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">{x.label}</span>
-                <span className="font-semibold">{currency(x.amountMinorUnits, profile.currency)}</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full" style={{ backgroundColor: categoryColors[x.key] ?? 'oklch(0.55 0.02 250)', width: `${Math.max((x.amountMinorUnits / max) * 100, x.amountMinorUnits > 0 ? 2 : 0)}%` }} />
-              </div>
+            <div className="space-y-2" key={x.key}>
+              <button
+                className="grid w-full gap-1.5 rounded-md border border-transparent p-2 text-left hover:border-border hover:bg-muted/60"
+                onClick={() => setOpenCategoryKey(y => y === x.key ? null : x.key)}
+                type="button"
+              >
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="inline-flex min-w-0 items-center gap-2 font-medium">
+                    <ChevronDown className={openCategoryKey === x.key ? 'size-4 shrink-0 transition-transform' : 'size-4 shrink-0 -rotate-90 transition-transform'} />
+                    <span className="truncate">{x.label}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{x.transactions.length}</span>
+                  </span>
+                  <span className="shrink-0 font-semibold">{currency(x.amountMinorUnits, profile.currency)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full" style={{ backgroundColor: categoryColors[x.key] ?? 'oklch(0.55 0.02 250)', width: `${Math.max((x.amountMinorUnits / max) * 100, x.amountMinorUnits > 0 ? 2 : 0)}%` }} />
+                </div>
+              </button>
+              {openCategoryKey === x.key && (
+                <div className="overflow-hidden rounded-md border border-border">
+                  {x.transactions.map(y => (
+                    <div className="grid gap-1 border-b border-border px-3 py-2 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center" key={y.id}>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{y.merchantName || y.description}</p>
+                        <p className="truncate text-xs text-muted-foreground">{formatDate(y.postedDate)}{y.merchantName ? ` - ${y.description}` : ''}</p>
+                      </div>
+                      <p className="text-sm font-semibold sm:text-right">{currency(y.amountMinorUnits, y.currency)}</p>
+                    </div>
+                  ))}
+                  {x.transactions.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">No transactions in this category.</p>}
+                </div>
+              )}
             </div>
           ))}
         </div>

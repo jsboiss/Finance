@@ -141,6 +141,16 @@ export type PayBreakdownCategory = {
   key: string
   label: string
   amountMinorUnits: number
+  transactions: PayBreakdownTransaction[]
+}
+
+export type PayBreakdownTransaction = {
+  id: string
+  description: string
+  merchantName?: string
+  amountMinorUnits: number
+  currency: string
+  postedDate: string
 }
 
 export type Subscription = {
