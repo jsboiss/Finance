@@ -387,19 +387,47 @@ function AverageDailySpendTrend({ points, isLoading }: { points: { key: string; 
   const height = 220
   const padding = 20
   const max = Math.max(...points.map(x => x.value), 1)
-  const path = points.map((x, index) => {
+  const chartPoints = points.map((x, index) => {
     const left = points.length <= 1 ? padding : padding + (index / (points.length - 1)) * (width - padding * 2)
     const top = height - padding - (x.value / max) * (height - padding * 2)
-    return `${index === 0 ? 'M' : 'L'} ${left} ${top}`
+    const tooltipPosition = index === 0
+      ? 'left-0'
+      : index === points.length - 1
+        ? 'right-0'
+        : 'left-1/2 -translate-x-1/2'
+    return { ...x, left, top, tooltipPosition }
+  })
+  const path = chartPoints.map((x, index) => {
+    return `${index === 0 ? 'M' : 'L'} ${x.left} ${x.top}`
   }).join(' ')
 
   return (
     <div className={isLoading ? 'space-y-3 opacity-60 transition-opacity' : 'space-y-3 transition-opacity'}>
-      <div className="h-64 overflow-hidden rounded-md border border-border bg-muted">
+      <div className="relative h-64 overflow-hidden rounded-md border border-border bg-muted">
         <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
           <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
           {path && <path d={path} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+          {chartPoints.map(x => (
+            <circle cx={x.left} cy={x.top} fill="var(--background)" key={x.key} r="3.5" stroke="oklch(0.62 0.14 160)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          ))}
         </svg>
+        {chartPoints.map(x => (
+          <div
+            className="group absolute z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2"
+            key={x.key}
+            style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}
+          >
+            <div className="h-full w-full rounded-full" />
+            <div className={`pointer-events-none absolute top-1/2 hidden min-w-40 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
+              <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[oklch(0.62_0.14_160)]" />
+                <span>Avg daily spend</span>
+                <span className="ml-auto font-semibold">{currency(x.value, 'AUD')}</span>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>{points[0] ? currency(points[0].value, 'AUD') : currency(0, 'AUD')}</span>
