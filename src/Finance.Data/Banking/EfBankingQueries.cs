@@ -90,14 +90,14 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken)
+    public async Task<OverviewDto> GetOverview(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var currentMonthKey = $"{today.Year:D4}-{today.Month:D2}";
         var firstVisibleMonth = today.AddMonths(-5);
         var from = new DateOnly(firstVisibleMonth.Year, firstVisibleMonth.Month, 1);
-        var includeInternalTransfers = accountId is not null;
+        var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
 
         var accountIds = await dbContext.BankAccounts
             .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
@@ -143,7 +143,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         foreach (var transaction in transactionRows)
         {
             var tags = tagsByTransaction.GetValueOrDefault(transaction.Id, []);
-            if (!includeInternalTransfers && tags.Any(x => x.Name.ToLowerInvariant() == internalTagName))
+            if (!shouldIncludeInternalTransfers && tags.Any(x => x.Name.ToLowerInvariant() == internalTagName))
             {
                 continue;
             }
@@ -206,7 +206,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var currentMonthSpend = monthRows.LastOrDefault()?.TotalMinorUnits ?? 0;
         var averageDailySpend = currentMonthSpend / GetElapsedDaysInMonth(currentMonthKey);
-        await UpsertAverageDailySpendSnapshot(tenantId, accountId, today, averageDailySpend, cancellationToken);
+        await UpsertAverageDailySpendSnapshot(tenantId, accountId, shouldIncludeInternalTransfers, today, averageDailySpend, cancellationToken);
         var monthDtos = monthRows
             .Select(x => new OverviewMonthSpendDto(
                 x.Key,
@@ -226,15 +226,16 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             currentMonthIncome,
             monthDtos,
             topTags,
-            GetDailyCashFlowDtos(transactionRows, tagsByTransaction, includeInternalTransfers, DefaultBankingData.InternalTransferTagName, "1m"));
+            GetDailyCashFlowDtos(transactionRows, tagsByTransaction, shouldIncludeInternalTransfers, DefaultBankingData.InternalTransferTagName, "1m"));
     }
 
-    public async Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var from = today.AddMonths(-6).AddDays(1);
-        var scopeKey = GetOverviewMetricScopeKey(accountId);
+        var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
+        var scopeKey = GetOverviewMetricScopeKey(accountId, shouldIncludeInternalTransfers);
         var accountIds = await dbContext.BankAccounts
             .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
             .Select(x => x.Id)
@@ -249,7 +250,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Where(x => x.TenantId == tenantId && x.ScopeKey == scopeKey && x.SnapshotDate >= from && x.SnapshotDate <= today)
             .ToListAsync(cancellationToken);
         var snapshotMap = existingSnapshots.ToDictionary(x => x.SnapshotDate);
-        var values = await CalculateAverageDailySpendHistory(tenantId, accountIds, accountId is not null, from, today, cancellationToken);
+        var values = await CalculateAverageDailySpendHistory(tenantId, accountIds, shouldIncludeInternalTransfers, from, today, cancellationToken);
         foreach (var snapshotDate in Enumerable.Range(0, today.DayNumber - from.DayNumber + 1).Select(x => from.AddDays(x)))
         {
             var value = values.GetValueOrDefault(snapshotDate);
@@ -280,12 +281,12 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, string? range, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, bool? includeInternalTransfers, string? range, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var from = GetDailyCashFlowStart(today, range);
-        var includeInternalTransfers = accountId is not null;
+        var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
 
         var accountIds = await dbContext.BankAccounts
             .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
@@ -311,7 +312,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .GroupBy(x => x.BankTransactionId)
             .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
 
-        return GetDailyCashFlowDtos(transactionRows, tagsByTransaction, includeInternalTransfers, DefaultBankingData.InternalTransferTagName, range);
+        return GetDailyCashFlowDtos(transactionRows, tagsByTransaction, shouldIncludeInternalTransfers, DefaultBankingData.InternalTransferTagName, range);
     }
 
     public async Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken)
@@ -1256,9 +1257,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return DateTime.DaysInMonth(year, month);
     }
 
-    private async Task UpsertAverageDailySpendSnapshot(Guid tenantId, Guid? accountId, DateOnly snapshotDate, long averageDailySpend, CancellationToken cancellationToken)
+    private async Task UpsertAverageDailySpendSnapshot(Guid tenantId, Guid? accountId, bool includeInternalTransfers, DateOnly snapshotDate, long averageDailySpend, CancellationToken cancellationToken)
     {
-        var scopeKey = GetOverviewMetricScopeKey(accountId);
+        var scopeKey = GetOverviewMetricScopeKey(accountId, includeInternalTransfers);
         var snapshot = await dbContext.OverviewMetricSnapshots
             .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ScopeKey == scopeKey && x.SnapshotDate == snapshotDate, cancellationToken);
 
@@ -1342,9 +1343,19 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return values;
     }
 
-    private static string GetOverviewMetricScopeKey(Guid? accountId)
+    private static bool ShouldIncludeInternalTransfers(Guid? accountId, bool? includeInternalTransfers)
     {
-        return accountId?.ToString("D") ?? "all";
+        return accountId is not null && (includeInternalTransfers ?? true);
+    }
+
+    private static string GetOverviewMetricScopeKey(Guid? accountId, bool includeInternalTransfers)
+    {
+        if (accountId is null)
+        {
+            return "all";
+        }
+
+        return includeInternalTransfers ? accountId.Value.ToString("D") : $"{accountId.Value:D}:exclude-internal";
     }
 
     private static string FormatMonthLabel(string monthKey)

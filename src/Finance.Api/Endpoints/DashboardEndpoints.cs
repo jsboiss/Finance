@@ -75,19 +75,19 @@ public static class DashboardEndpoints
         return queries.GetBalances(cancellationToken);
     }
 
-    private static Task<OverviewDto> GetOverview(Guid? accountId, IBankingQueries queries, CancellationToken cancellationToken)
+    private static Task<OverviewDto> GetOverview(Guid? accountId, bool? includeInternalTransfers, IBankingQueries queries, CancellationToken cancellationToken)
     {
-        return queries.GetOverview(accountId, cancellationToken);
+        return queries.GetOverview(accountId, includeInternalTransfers, cancellationToken);
     }
 
-    private static Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, string? range, IBankingQueries queries, CancellationToken cancellationToken)
+    private static Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, bool? includeInternalTransfers, string? range, IBankingQueries queries, CancellationToken cancellationToken)
     {
-        return queries.GetDailyCashFlow(accountId, range, cancellationToken);
+        return queries.GetDailyCashFlow(accountId, includeInternalTransfers, range, cancellationToken);
     }
 
-    private static Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, IBankingQueries queries, CancellationToken cancellationToken)
+    private static Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, bool? includeInternalTransfers, IBankingQueries queries, CancellationToken cancellationToken)
     {
-        return queries.GetAverageDailySpendHistory(accountId, cancellationToken);
+        return queries.GetAverageDailySpendHistory(accountId, includeInternalTransfers, cancellationToken);
     }
 
     private static Task<IReadOnlyList<TransactionDto>> GetTransactions(

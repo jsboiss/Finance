@@ -10,11 +10,11 @@ public interface IBankingQueries
 
     Task<IReadOnlyList<BalanceDto>> GetBalances(CancellationToken cancellationToken);
 
-    Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken);
+    Task<OverviewDto> GetOverview(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, string? range, CancellationToken cancellationToken);
+    Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, bool? includeInternalTransfers, string? range, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 

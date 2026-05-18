@@ -39,15 +39,18 @@ const dailyCashFlowRanges: { value: DailyCashFlowRange; label: string; descripti
 
 export function Overview() {
   const [overviewAccountId, setOverviewAccountId] = useState('all')
+  const [includeInternalTransfers, setIncludeInternalTransfers] = useState(true)
   const [dailyCashFlowRange, setDailyCashFlowRange] = useState<DailyCashFlowRange>('1m')
   const [showAverageDailySpendHistory, setShowAverageDailySpendHistory] = useState(false)
+  const isAllAccounts = overviewAccountId === 'all'
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const overview = useQuery({
-    queryKey: ['overview', overviewAccountId],
+    queryKey: ['overview', overviewAccountId, includeInternalTransfers],
     queryFn: () => {
       const params = new URLSearchParams()
-      if (overviewAccountId !== 'all') {
+      if (!isAllAccounts) {
         params.set('accountId', overviewAccountId)
+        params.set('includeInternalTransfers', `${includeInternalTransfers}`)
       }
 
       return api<OverviewSummary>(`/api/overview${params.size === 0 ? '' : `?${params}`}`)
@@ -55,11 +58,12 @@ export function Overview() {
   })
   const dailyCashFlow = useQuery({
     placeholderData: x => x,
-    queryKey: ['daily-cash-flow', overviewAccountId, dailyCashFlowRange],
+    queryKey: ['daily-cash-flow', overviewAccountId, includeInternalTransfers, dailyCashFlowRange],
     queryFn: () => {
       const params = new URLSearchParams({ range: dailyCashFlowRange })
-      if (overviewAccountId !== 'all') {
+      if (!isAllAccounts) {
         params.set('accountId', overviewAccountId)
+        params.set('includeInternalTransfers', `${includeInternalTransfers}`)
       }
 
       return api<OverviewDailyCashFlow[]>(`/api/overview/daily-cash-flow?${params}`)
@@ -68,11 +72,12 @@ export function Overview() {
   const averageDailySpendHistory = useQuery({
     enabled: showAverageDailySpendHistory,
     placeholderData: x => x,
-    queryKey: ['average-daily-spend-history', overviewAccountId],
+    queryKey: ['average-daily-spend-history', overviewAccountId, includeInternalTransfers],
     queryFn: () => {
       const params = new URLSearchParams()
-      if (overviewAccountId !== 'all') {
+      if (!isAllAccounts) {
         params.set('accountId', overviewAccountId)
+        params.set('includeInternalTransfers', `${includeInternalTransfers}`)
       }
 
       return api<OverviewMetricSnapshot[]>(`/api/overview/average-daily-spend-history${params.size === 0 ? '' : `?${params}`}`)
@@ -88,19 +93,31 @@ export function Overview() {
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <Header title="Overview" subtitle="Tagged spending patterns, trend changes, and unusually large transactions." />
-        <select
-          aria-label="Overview account"
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 sm:w-64"
-          onChange={x => setOverviewAccountId(x.target.value)}
-          value={overviewAccountId}
-        >
-          <option value="all">All accounts</option>
-          {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
-        </select>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <select
+            aria-label="Overview account"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 sm:w-64"
+            onChange={x => setOverviewAccountId(x.target.value)}
+            value={overviewAccountId}
+          >
+            <option value="all">All accounts</option>
+            {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+          </select>
+          <label className={isAllAccounts ? 'inline-flex items-center gap-2 text-sm text-muted-foreground opacity-60' : 'inline-flex items-center gap-2 text-sm text-muted-foreground'}>
+            <input
+              checked={!isAllAccounts && includeInternalTransfers}
+              className="size-4 rounded border-input accent-primary disabled:cursor-not-allowed"
+              disabled={isAllAccounts}
+              onChange={x => setIncludeInternalTransfers(x.target.checked)}
+              type="checkbox"
+            />
+            Include internal payments
+          </label>
+        </div>
       </div>
       {isLoading && <OverviewLoading />}
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label={overviewAccountId === 'all' ? 'Total balance' : 'Account balance'} value={currency(analysis.balance, 'AUD')} />
+        <Metric label={isAllAccounts ? 'Total balance' : 'Account balance'} value={currency(analysis.balance, 'AUD')} />
         <Metric label="This month spent" value={currency(analysis.currentMonthSpend, 'AUD')} />
         <Metric
           action={
