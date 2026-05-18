@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type React from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { CircleDollarSign, LineChart, Loader2, ReceiptText, X } from 'lucide-react'
 import { Header } from '../components/Header'
 import { Metric } from '../components/Metric'
@@ -46,6 +46,7 @@ export function Overview() {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const overview = useQuery({
     queryKey: ['overview', overviewAccountId, includeInternalTransfers],
+    placeholderData: keepPreviousData,
     queryFn: () => {
       const params = new URLSearchParams()
       if (!isAllAccounts) {
@@ -57,6 +58,7 @@ export function Overview() {
     }
   })
   const dailyCashFlow = useQuery({
+    enabled: dailyCashFlowRange !== '1m',
     placeholderData: x => x,
     queryKey: ['daily-cash-flow', overviewAccountId, includeInternalTransfers, dailyCashFlowRange],
     queryFn: () => {
@@ -84,7 +86,7 @@ export function Overview() {
     }
   })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
-  const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlow.data ?? overview.data?.dailyCashFlow), [dailyCashFlow.data, overview.data?.dailyCashFlow])
+  const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlowRange === '1m' ? overview.data?.dailyCashFlow : dailyCashFlow.data), [dailyCashFlow.data, dailyCashFlowRange, overview.data?.dailyCashFlow])
   const averageDailySpendTrend = useMemo(() => mapAverageDailySpendHistory(averageDailySpendHistory.data), [averageDailySpendHistory.data])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
   const isLoading = accounts.isLoading || overview.isLoading
