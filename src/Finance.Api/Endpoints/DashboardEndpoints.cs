@@ -25,6 +25,7 @@ public static class DashboardEndpoints
         group.MapGet("/overview", GetOverview);
         group.MapGet("/overview/daily-cash-flow", GetDailyCashFlow);
         group.MapGet("/overview/average-daily-spend-history", GetAverageDailySpendHistory);
+        group.MapGet("/accounts/{accountId:guid}/savings-trajectory", GetSavingsTrajectory);
         group.MapGet("/transactions", GetTransactions);
         group.MapGet("/pay-breakdowns", GetPayBreakdownProfiles);
         group.MapGet("/pay-breakdowns/{profileId:guid}", GetPayBreakdownProfile);
@@ -93,6 +94,12 @@ public static class DashboardEndpoints
     private static Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, bool? includeInternalTransfers, IBankingQueries queries, CancellationToken cancellationToken)
     {
         return queries.GetAverageDailySpendHistory(accountId, includeInternalTransfers, cancellationToken);
+    }
+
+    private static async Task<Results<Ok<SavingsTrajectoryDto>, NotFound>> GetSavingsTrajectory(Guid accountId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var trajectory = await queries.GetSavingsTrajectory(accountId, cancellationToken);
+        return trajectory is null ? TypedResults.NotFound() : TypedResults.Ok(trajectory);
     }
 
     private static Task<IReadOnlyList<TransactionDto>> GetTransactions(

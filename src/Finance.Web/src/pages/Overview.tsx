@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, OverviewMetricSnapshot, TransactionTag } from '../lib/types'
+import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, OverviewMetricSnapshot, SavingsTrajectory as SavingsTrajectorySummary, TransactionTag } from '../lib/types'
 
 type DailyCashFlowRange = '1w' | '1m' | '3m'
 
@@ -84,6 +84,12 @@ export function Overview() {
 
       return api<OverviewMetricSnapshot[]>(`/api/overview/average-daily-spend-history${params.size === 0 ? '' : `?${params}`}`)
     }
+  })
+  const savingsTrajectory = useQuery({
+    enabled: !isAllAccounts,
+    placeholderData: x => x,
+    queryKey: ['savings-trajectory', overviewAccountId],
+    queryFn: () => api<SavingsTrajectorySummary>(`/api/accounts/${overviewAccountId}/savings-trajectory`)
   })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
   const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlowRange === '1m' ? overview.data?.dailyCashFlow : dailyCashFlow.data), [dailyCashFlow.data, dailyCashFlowRange, overview.data?.dailyCashFlow])
@@ -161,6 +167,20 @@ export function Overview() {
           <CashFlowRace income={analysis.currentMonthIncome} expenses={analysis.currentMonthSpend} />
         </CardContent>
       </Card>
+
+      {!isAllAccounts && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Savings trajectory</CardTitle>
+              <CardDescription>{getSelectedAccountName(accounts.data, overviewAccountId)}</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SavingsTrajectoryChart trajectory={savingsTrajectory.data} isLoading={savingsTrajectory.isFetching} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -262,6 +282,10 @@ function mapAverageDailySpendHistory(days?: OverviewMetricSnapshot[]) {
   }))
 }
 
+function getSelectedAccountName(accounts: Account[] | undefined, accountId: string) {
+  return accounts?.find(x => x.id === accountId)?.displayName ?? 'Selected account'
+}
+
 function OverviewLoading() {
   return (
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg">
@@ -269,6 +293,74 @@ function OverviewLoading() {
       <span>Loading overview...</span>
     </div>
   )
+}
+
+function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: SavingsTrajectorySummary; isLoading: boolean }) {
+  const width = 720
+  const height = 260
+  const padding = 24
+  const actual = trajectory?.actual ?? []
+  const projection = trajectory?.projection ?? []
+  const allPoints = [...actual, ...projection]
+  const max = Math.max(...allPoints.map(x => x.balanceMinorUnits), 1)
+  const min = Math.min(...allPoints.map(x => x.balanceMinorUnits), 0)
+  const range = Math.max(max - min, 1)
+  const actualPoints = actual.map((x, index) => toTrajectoryChartPoint(x, index, Math.max(allPoints.length, 1), width, height, padding, min, range))
+  const projectionPoints = projection.map((x, index) => toTrajectoryChartPoint(x, actual.length + index, Math.max(allPoints.length, 1), width, height, padding, min, range))
+  const actualPath = toPath(actualPoints)
+  const projectionStart = actualPoints.at(-1)
+  const projectionPath = toPath(projectionStart ? [projectionStart, ...projectionPoints] : projectionPoints)
+
+  if (!trajectory && !isLoading) {
+    return <p className="text-sm text-muted-foreground">No savings transactions found for this account yet.</p>
+  }
+
+  return (
+    <div className={isLoading ? 'space-y-4 opacity-60 transition-opacity' : 'space-y-4 transition-opacity'}>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <ProgressRow color="oklch(0.62 0.14 160)" detail="Historical deposits, excluding interest" label="Deposits" value={currency(trajectory?.totalDepositsMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
+        <ProgressRow color="oklch(0.7 0.13 85)" detail="Bonus Interest and Credit Interest" label="Interest" value={currency(trajectory?.totalInterestMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
+        <ProgressRow color="oklch(0.5 0.18 250)" detail="Projected from past deposit pace" label="Monthly deposits" value={currency(trajectory?.projectedMonthlyDepositsMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
+        <ProgressRow color="oklch(0.56 0.15 305)" detail="Projected from past interest accrual" label="Monthly interest" value={currency(trajectory?.projectedMonthlyInterestMinorUnits ?? 0, trajectory?.currency ?? 'AUD')} width={1} />
+      </div>
+      <div className="relative h-72 overflow-hidden rounded-md border border-border bg-muted">
+        <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+          <path d={`M ${padding} ${height - padding} H ${width - padding}`} fill="none" stroke="currentColor" strokeOpacity="0.15" />
+          {actualPath && <path d={actualPath} fill="none" stroke="oklch(0.62 0.14 160)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+          {projectionPath && <path d={projectionPath} fill="none" stroke="oklch(0.5 0.18 250)" strokeDasharray="7 7" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {[...actualPoints, ...projectionPoints].filter((_x, index) => index % Math.max(1, Math.floor(allPoints.length / 12)) === 0 || index === allPoints.length - 1).map(x => (
+          <div className="group absolute z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2" key={`${x.key}-${x.left}`} style={{ left: `${(x.left / width) * 100}%`, top: `${(x.top / height) * 100}%` }}>
+            <div className="h-full w-full rounded-full" />
+            <div className={`pointer-events-none absolute top-1/2 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${x.tooltipPosition}`}>
+              <p className="font-medium">{formatDailyCashFlowDate(x.key)}</p>
+              <p className="mt-1 font-semibold">{currency(x.balanceMinorUnits, trajectory?.currency ?? 'AUD')}</p>
+              <p className="mt-1 text-muted-foreground">Deposits {currency(x.depositMinorUnits, trajectory?.currency ?? 'AUD')} / Interest {currency(x.interestMinorUnits, trajectory?.currency ?? 'AUD')}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.14_160)]" />History</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-5 border-t-2 border-dashed border-[oklch(0.5_0.18_250)]" />Projection</span>
+      </div>
+    </div>
+  )
+}
+
+function toTrajectoryChartPoint(point: { key: string; balanceMinorUnits: number; depositMinorUnits: number; interestMinorUnits: number }, index: number, total: number, width: number, height: number, padding: number, min: number, range: number) {
+  const left = total <= 1 ? padding : padding + (index / (total - 1)) * (width - padding * 2)
+  const top = height - padding - ((point.balanceMinorUnits - min) / range) * (height - padding * 2)
+  const tooltipPosition = index === 0
+    ? 'left-0'
+    : index === total - 1
+      ? 'right-0'
+      : 'left-1/2 -translate-x-1/2'
+  return { ...point, left, top, tooltipPosition }
+}
+
+function toPath(points: { left: number; top: number }[]) {
+  return points.map((x, index) => `${index === 0 ? 'M' : 'L'} ${x.left} ${x.top}`).join(' ')
 }
 
 function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {

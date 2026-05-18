@@ -113,6 +113,24 @@ export type OverviewMetricSnapshot = {
   averageDailySpendMinorUnits: number
 }
 
+export type SavingsTrajectory = {
+  accountId: string
+  currency: string
+  totalDepositsMinorUnits: number
+  totalInterestMinorUnits: number
+  projectedMonthlyDepositsMinorUnits: number
+  projectedMonthlyInterestMinorUnits: number
+  actual: SavingsTrajectoryPoint[]
+  projection: SavingsTrajectoryPoint[]
+}
+
+export type SavingsTrajectoryPoint = {
+  key: string
+  balanceMinorUnits: number
+  depositMinorUnits: number
+  interestMinorUnits: number
+}
+
 export type PayBreakdownProfile = {
   id: string
   name: string

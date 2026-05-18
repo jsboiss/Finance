@@ -16,6 +16,8 @@ public interface IBankingQueries
 
     Task<IReadOnlyList<OverviewMetricSnapshotDto>> GetAverageDailySpendHistory(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken);
 
+    Task<SavingsTrajectoryDto?> GetSavingsTrajectory(Guid accountId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PayBreakdownProfileDto>> GetPayBreakdownProfiles(CancellationToken cancellationToken);

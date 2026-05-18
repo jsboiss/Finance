@@ -62,6 +62,18 @@ public sealed record OverviewDailyCashFlowDto(string Key, int Day, long IncomeMi
 
 public sealed record OverviewMetricSnapshotDto(string Key, long AverageDailySpendMinorUnits);
 
+public sealed record SavingsTrajectoryDto(
+    Guid AccountId,
+    string Currency,
+    long TotalDepositsMinorUnits,
+    long TotalInterestMinorUnits,
+    long ProjectedMonthlyDepositsMinorUnits,
+    long ProjectedMonthlyInterestMinorUnits,
+    IReadOnlyList<SavingsTrajectoryPointDto> Actual,
+    IReadOnlyList<SavingsTrajectoryPointDto> Projection);
+
+public sealed record SavingsTrajectoryPointDto(string Key, long BalanceMinorUnits, long DepositMinorUnits, long InterestMinorUnits);
+
 public sealed record TransactionQuery(Guid? AccountId, DateOnly? From, DateOnly? To, string? Search, int Page, int PageSize, string? Sort);
 
 public sealed record PayBreakdownProfileDto(

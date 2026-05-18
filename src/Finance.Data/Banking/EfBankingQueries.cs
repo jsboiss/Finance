@@ -281,6 +281,78 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<SavingsTrajectoryDto?> GetSavingsTrajectory(Guid accountId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = today.AddMonths(-6).AddDays(1);
+        var projectionTo = today.AddMonths(3);
+        var account = await dbContext.BankAccounts
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.Id == accountId)
+            .Select(x => new { x.Id, x.Currency })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (account is null)
+        {
+            return null;
+        }
+
+        var rows = await dbContext.BankTransactions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId
+                && x.BankAccountId == accountId
+                && x.Status == "posted"
+                && x.PostedDate >= from
+                && x.PostedDate <= today
+                && x.AmountMinorUnits > 0)
+            .Select(x => new SavingsTrajectoryTransactionRow(x.AmountMinorUnits, x.PostedDate, x.Description))
+            .ToListAsync(cancellationToken);
+
+        var rowsByDate = rows
+            .GroupBy(x => x.PostedDate)
+            .ToDictionary(
+                x => x.Key,
+                x => new SavingsTrajectoryDay(
+                    x.Where(y => !IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits),
+                    x.Where(y => IsInterestTransaction(y.Description)).Sum(y => y.AmountMinorUnits)));
+        var actual = new List<SavingsTrajectoryPointDto>();
+        long runningBalance = 0;
+
+        foreach (var date in Enumerable.Range(0, today.DayNumber - from.DayNumber + 1).Select(x => from.AddDays(x)))
+        {
+            var day = rowsByDate.GetValueOrDefault(date, new SavingsTrajectoryDay(0, 0));
+            runningBalance += day.DepositMinorUnits + day.InterestMinorUnits;
+            actual.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), runningBalance, day.DepositMinorUnits, day.InterestMinorUnits));
+        }
+
+        var totalDeposits = actual.Sum(x => x.DepositMinorUnits);
+        var totalInterest = actual.Sum(x => x.InterestMinorUnits);
+        var elapsedDays = Math.Max(1, today.DayNumber - from.DayNumber + 1);
+        var projectedDailyDeposits = totalDeposits / (decimal)elapsedDays;
+        var projectedDailyInterest = totalInterest / (decimal)elapsedDays;
+        var projection = new List<SavingsTrajectoryPointDto>();
+        var projectedBalance = runningBalance;
+
+        foreach (var date in Enumerable.Range(1, projectionTo.DayNumber - today.DayNumber).Select(x => today.AddDays(x)))
+        {
+            var projectedDeposit = (long)Math.Round(projectedDailyDeposits, MidpointRounding.AwayFromZero);
+            var projectedInterest = (long)Math.Round(projectedDailyInterest, MidpointRounding.AwayFromZero);
+            projectedBalance += projectedDeposit + projectedInterest;
+            projection.Add(new SavingsTrajectoryPointDto(date.ToString("yyyy-MM-dd"), projectedBalance, projectedDeposit, projectedInterest));
+        }
+
+        return new SavingsTrajectoryDto(
+            account.Id,
+            account.Currency,
+            totalDeposits,
+            totalInterest,
+            (long)Math.Round(projectedDailyDeposits * 30, MidpointRounding.AwayFromZero),
+            (long)Math.Round(projectedDailyInterest * 30, MidpointRounding.AwayFromZero),
+            actual,
+            projection);
+    }
+
     public async Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, bool? includeInternalTransfers, string? range, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
@@ -1333,6 +1405,12 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         };
     }
 
+    private static bool IsInterestTransaction(string description)
+    {
+        return description.Equals("Bonus Interest", StringComparison.OrdinalIgnoreCase)
+            || description.Equals("Credit Interest", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int GetElapsedDaysInMonth(string monthKey)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -1674,6 +1752,10 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     }
 
     private sealed record OverviewTransactionRow(Guid Id, long AmountMinorUnits, DateOnly PostedDate);
+
+    private sealed record SavingsTrajectoryTransactionRow(long AmountMinorUnits, DateOnly PostedDate, string Description);
+
+    private sealed record SavingsTrajectoryDay(long DepositMinorUnits, long InterestMinorUnits);
 
     private sealed record PayBreakdownTransactionRow(Guid Id, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 
