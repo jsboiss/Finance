@@ -90,7 +90,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<OverviewDto> GetOverview(Guid? accountId, string? dailyCashFlowRange, CancellationToken cancellationToken)
+    public async Task<OverviewDto> GetOverview(Guid? accountId, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -136,8 +136,6 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var monthRows = monthKeys.Select(x => new OverviewMonthAccumulator(x, FormatMonthLabel(x))).ToList();
         var monthMap = monthRows.ToDictionary(x => x.Key);
         var tagMap = new Dictionary<Guid, OverviewTagAccumulator>();
-        var dailyCashFlow = GetDailyCashFlowDays(today, dailyCashFlowRange);
-        var dailyCashFlowMap = dailyCashFlow.ToDictionary(x => x.Key);
         var expensesCount = 0;
         var taggedCount = 0;
         long currentMonthIncome = 0;
@@ -154,19 +152,6 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             if (monthKey == currentMonthKey && transaction.AmountMinorUnits > 0)
             {
                 currentMonthIncome += transaction.AmountMinorUnits;
-            }
-
-            if (dailyCashFlowMap.TryGetValue(transaction.PostedDate.ToString("yyyy-MM-dd"), out var day))
-            {
-                if (transaction.AmountMinorUnits > 0)
-                {
-                    day.IncomeMinorUnits += transaction.AmountMinorUnits;
-                }
-
-                if (transaction.AmountMinorUnits < 0)
-                {
-                    day.ExpensesMinorUnits += Math.Abs(transaction.AmountMinorUnits);
-                }
             }
 
             if (transaction.AmountMinorUnits >= 0 || !monthMap.TryGetValue(monthKey, out var month))
@@ -240,7 +225,41 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             currentMonthIncome,
             monthDtos,
             topTags,
-            dailyCashFlow.Select(x => new OverviewDailyCashFlowDto(x.Key, x.Day, x.IncomeMinorUnits, x.ExpensesMinorUnits)).ToList());
+            GetDailyCashFlowDtos(transactionRows, tagsByTransaction, includeInternalTransfers, DefaultBankingData.InternalTransferTagName, "1m"));
+    }
+
+    public async Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, string? range, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = GetDailyCashFlowStart(today, range);
+        var includeInternalTransfers = accountId is not null;
+
+        var accountIds = await dbContext.BankAccounts
+            .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var transactionRows = await dbContext.BankTransactions
+            .Where(x => x.TenantId == tenantId
+                && accountIds.Contains(x.BankAccountId)
+                && x.Status == "posted"
+                && x.PostedDate >= from
+                && x.PostedDate <= today)
+            .Select(x => new OverviewTransactionRow(x.Id, x.AmountMinorUnits, x.PostedDate))
+            .ToListAsync(cancellationToken);
+
+        var transactionIds = transactionRows.Select(x => x.Id).ToList();
+        var tagsByTransaction = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+            .GroupBy(x => x.BankTransactionId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
+
+        return GetDailyCashFlowDtos(transactionRows, tagsByTransaction, includeInternalTransfers, DefaultBankingData.InternalTransferTagName, range);
     }
 
     public async Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken)
@@ -1105,17 +1124,61 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
     private static IReadOnlyList<OverviewDailyCashFlowAccumulator> GetDailyCashFlowDays(DateOnly today, string? range)
     {
-        var start = CleanDailyCashFlowRange(range) switch
-        {
-            "1w" => today.AddDays(-6),
-            "3m" => today.AddMonths(-3).AddDays(1),
-            _ => today.AddMonths(-1).AddDays(1)
-        };
+        var start = GetDailyCashFlowStart(today, range);
 
         return Enumerable.Range(0, today.DayNumber - start.DayNumber + 1)
             .Select(x => start.AddDays(x))
             .Select(x => new OverviewDailyCashFlowAccumulator(x.ToString("yyyy-MM-dd"), x.Day))
             .ToList();
+    }
+
+    private static IReadOnlyList<OverviewDailyCashFlowDto> GetDailyCashFlowDtos(
+        IReadOnlyList<OverviewTransactionRow> transactions,
+        IReadOnlyDictionary<Guid, List<TransactionTagDto>> tagsByTransaction,
+        bool includeInternalTransfers,
+        string internalTransferTagName,
+        string? range)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var dailyCashFlow = GetDailyCashFlowDays(today, range);
+        var dailyCashFlowMap = dailyCashFlow.ToDictionary(x => x.Key);
+        var internalTagName = internalTransferTagName.ToLowerInvariant();
+
+        foreach (var transaction in transactions)
+        {
+            var tags = tagsByTransaction.GetValueOrDefault(transaction.Id, []);
+            if (!includeInternalTransfers && tags.Any(x => x.Name.ToLowerInvariant() == internalTagName))
+            {
+                continue;
+            }
+
+            if (!dailyCashFlowMap.TryGetValue(transaction.PostedDate.ToString("yyyy-MM-dd"), out var day))
+            {
+                continue;
+            }
+
+            if (transaction.AmountMinorUnits > 0)
+            {
+                day.IncomeMinorUnits += transaction.AmountMinorUnits;
+            }
+
+            if (transaction.AmountMinorUnits < 0)
+            {
+                day.ExpensesMinorUnits += Math.Abs(transaction.AmountMinorUnits);
+            }
+        }
+
+        return dailyCashFlow.Select(x => new OverviewDailyCashFlowDto(x.Key, x.Day, x.IncomeMinorUnits, x.ExpensesMinorUnits)).ToList();
+    }
+
+    private static DateOnly GetDailyCashFlowStart(DateOnly today, string? range)
+    {
+        return CleanDailyCashFlowRange(range) switch
+        {
+            "1w" => today.AddDays(-6),
+            "3m" => today.AddMonths(-3).AddDays(1),
+            _ => today.AddMonths(-1).AddDays(1)
+        };
     }
 
     private static string CleanDailyCashFlowRange(string? range)

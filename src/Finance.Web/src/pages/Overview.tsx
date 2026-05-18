@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
-import type { Account, Overview as OverviewSummary, TransactionTag } from '../lib/types'
+import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, TransactionTag } from '../lib/types'
 
 type DailyCashFlowRange = '1w' | '1m' | '3m'
 
@@ -42,19 +42,32 @@ export function Overview() {
   const [dailyCashFlowRange, setDailyCashFlowRange] = useState<DailyCashFlowRange>('1m')
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const overview = useQuery({
-    queryKey: ['overview', overviewAccountId, dailyCashFlowRange],
+    queryKey: ['overview', overviewAccountId],
     queryFn: () => {
-      const params = new URLSearchParams({ dailyCashFlowRange })
+      const params = new URLSearchParams()
       if (overviewAccountId !== 'all') {
         params.set('accountId', overviewAccountId)
       }
 
-      return api<OverviewSummary>(`/api/overview?${params}`)
+      return api<OverviewSummary>(`/api/overview${params.size === 0 ? '' : `?${params}`}`)
+    }
+  })
+  const dailyCashFlow = useQuery({
+    placeholderData: x => x,
+    queryKey: ['daily-cash-flow', overviewAccountId, dailyCashFlowRange],
+    queryFn: () => {
+      const params = new URLSearchParams({ range: dailyCashFlowRange })
+      if (overviewAccountId !== 'all') {
+        params.set('accountId', overviewAccountId)
+      }
+
+      return api<OverviewDailyCashFlow[]>(`/api/overview/daily-cash-flow?${params}`)
     }
   })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
+  const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlow.data ?? overview.data?.dailyCashFlow), [dailyCashFlow.data, overview.data?.dailyCashFlow])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
-  const isLoading = accounts.isLoading || overview.isFetching
+  const isLoading = accounts.isLoading || overview.isLoading
 
   return (
     <section className="space-y-6">
@@ -111,7 +124,7 @@ export function Overview() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <DailyCashFlowBars days={analysis.dailyCashFlow} />
+          <DailyCashFlowBars days={dailyCashFlowDays} isLoading={dailyCashFlow.isFetching} />
         </CardContent>
       </Card>
 
@@ -168,13 +181,17 @@ function mapOverview(overview?: OverviewSummary) {
       previous: x.previousMinorUnits,
       months: x.months
     })),
-    dailyCashFlow: (overview?.dailyCashFlow ?? []).map(x => ({
-      key: x.key,
-      day: x.day,
-      income: x.incomeMinorUnits,
-      expenses: x.expensesMinorUnits
-    }))
+    dailyCashFlow: mapDailyCashFlow(overview?.dailyCashFlow)
   }
+}
+
+function mapDailyCashFlow(days?: OverviewDailyCashFlow[]) {
+  return (days ?? []).map(x => ({
+    key: x.key,
+    day: x.day,
+    income: x.incomeMinorUnits,
+    expenses: x.expensesMinorUnits
+  }))
 }
 
 function OverviewLoading() {
@@ -254,11 +271,11 @@ function StackedMonthlyBars({ months, tags }: { months: MonthSpend[]; tags: TagS
   )
 }
 
-function DailyCashFlowBars({ days }: { days: { key: string; day: number; income: number; expenses: number }[] }) {
+function DailyCashFlowBars({ days, isLoading }: { days: { key: string; day: number; income: number; expenses: number }[]; isLoading: boolean }) {
   const max = Math.max(...days.map(x => x.income + x.expenses), 1)
   return (
     <div className="space-y-4">
-      <div className="grid h-80 items-end gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(days.length, 1)}, minmax(0, 1fr))` }}>
+      <div className={isLoading ? 'grid h-80 items-end gap-1 opacity-60 transition-opacity' : 'grid h-80 items-end gap-1 transition-opacity'} style={{ gridTemplateColumns: `repeat(${Math.max(days.length, 1)}, minmax(0, 1fr))` }}>
         {days.map((x, index) => {
           const incomeHeight = (x.income / max) * 100
           const expenseHeight = (x.expenses / max) * 100
@@ -286,7 +303,7 @@ function DailyCashFlowBars({ days }: { days: { key: string; day: number; income:
                   </div>
                 </div>
               </div>
-              <p className="text-center text-[10px] text-muted-foreground">{formatDailyCashFlowTick(x.key, x.day, days.length)}</p>
+              <p className="text-center text-[10px] text-muted-foreground">{formatDailyCashFlowTick(x.key, days.length)}</p>
             </div>
           )
         })}
@@ -303,8 +320,8 @@ function formatDailyCashFlowDate(key: string) {
   return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function formatDailyCashFlowTick(key: string, day: number, days: number) {
-  if (days <= 31 || day === 1) {
+function formatDailyCashFlowTick(key: string, days: number) {
+  if (days <= 31) {
     return new Date(`${key}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
   }
 
