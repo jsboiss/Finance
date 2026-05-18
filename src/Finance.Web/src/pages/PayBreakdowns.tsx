@@ -165,6 +165,7 @@ function PayBreakdownCard({ profile, onDelete, onEdit }: { profile: PayBreakdown
           <CardTitle>{profile.name}</CardTitle>
           <CardDescription>
             {formatDate(profile.breakdown.from)} to {formatDate(profile.breakdown.to)}
+            {!profile.breakdown.isPayDateMatched ? ' - no matching pay deposit found yet' : ''}
           </CardDescription>
         </div>
         <div className="flex gap-2">

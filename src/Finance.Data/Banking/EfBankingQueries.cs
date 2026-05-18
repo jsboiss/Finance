@@ -1492,7 +1492,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     private async Task<PayBreakdownDto> GetPayBreakdown(Guid tenantId, PayBreakdownProfile profile, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var from = today.AddDays(-13);
+        var payDate = await GetLatestPayDate(tenantId, profile, today, cancellationToken);
+        var from = payDate ?? today.AddDays(-13);
         var transactions = await dbContext.BankTransactions
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId
@@ -1529,6 +1530,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return new PayBreakdownDto(
             from,
             today,
+            payDate is not null,
             profile.FortnightlyPayMinorUnits,
             personalExpense,
             internalExpense,
@@ -1539,6 +1541,29 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 new PayBreakdownCategoryDto("internal", "Internal expense", internalExpense),
                 new PayBreakdownCategoryDto("savings", "Savings transfer", savingsTransfer)
             ]);
+    }
+
+    private async Task<DateOnly?> GetLatestPayDate(Guid tenantId, PayBreakdownProfile profile, DateOnly today, CancellationToken cancellationToken)
+    {
+        if (profile.FortnightlyPayMinorUnits <= 0)
+        {
+            return null;
+        }
+
+        var earliestPaySearchDate = today.AddMonths(-1);
+        var tolerance = Math.Max(100, (long)Math.Round(profile.FortnightlyPayMinorUnits * 0.02));
+        return await dbContext.BankTransactions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId
+                && x.BankAccountId == profile.MainAccountId
+                && x.Status == "posted"
+                && x.PostedDate >= earliestPaySearchDate
+                && x.PostedDate <= today
+                && x.AmountMinorUnits > 0
+                && Math.Abs(x.AmountMinorUnits - profile.FortnightlyPayMinorUnits) <= tolerance)
+            .OrderByDescending(x => x.PostedDate)
+            .Select(x => (DateOnly?)x.PostedDate)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<HashSet<Guid>> GetSavingsTransferTransactionIds(Guid tenantId, Guid? savingsAccountId, IReadOnlyList<PayBreakdownTransactionRow> transactions, CancellationToken cancellationToken)

@@ -78,6 +78,7 @@ public sealed record PayBreakdownProfileDto(
 public sealed record PayBreakdownDto(
     DateOnly From,
     DateOnly To,
+    bool IsPayDateMatched,
     long PayMinorUnits,
     long PersonalExpenseMinorUnits,
     long InternalExpenseMinorUnits,

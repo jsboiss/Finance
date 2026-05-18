@@ -128,6 +128,7 @@ export type PayBreakdownProfile = {
 export type PayBreakdown = {
   from: string
   to: string
+  isPayDateMatched: boolean
   payMinorUnits: number
   personalExpenseMinorUnits: number
   internalExpenseMinorUnits: number
