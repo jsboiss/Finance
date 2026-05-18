@@ -20,6 +20,16 @@ type AmountFilter = {
   max?: string
 }
 
+type CreateTagInput = {
+  name: string
+  color: string
+}
+
+type SetTransactionTagsInput = {
+  transactionId: string
+  tagIds: string[]
+}
+
 const tagColorOptions = ['#bae6fd', '#bbf7d0', '#fde68a', '#fecdd3', '#ddd6fe', '#fed7aa', '#ccfbf1', '#e9d5ff']
 
 export function Transactions() {
@@ -40,13 +50,26 @@ export function Transactions() {
   const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<TransactionTag[]>('/api/tags') })
   const merchantRules = useQuery({ queryKey: ['merchant-tags'], queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags') })
   const createTag = useMutation({
-    mutationFn: () => api<TransactionTag>('/api/tags', {
+    mutationFn: (input: CreateTagInput) => api<TransactionTag>('/api/tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: tagName, color: tagColor })
+      body: JSON.stringify(input)
     }),
-    onSuccess: () => {
+    onMutate: async input => {
+      await queryClient.cancelQueries({ queryKey: ['tags'] })
+      const previousTags = queryClient.getQueryData<TransactionTag[]>(['tags'])
+      const optimisticTag = { id: `pending-${crypto.randomUUID()}`, name: input.name, color: input.color }
+      queryClient.setQueryData<TransactionTag[]>(['tags'], x => [...(x ?? []), optimisticTag])
       setTagName('')
+      return { optimisticTagId: optimisticTag.id, previousTags }
+    },
+    onError: (_error, _input, context) => {
+      queryClient.setQueryData(['tags'], context?.previousTags)
+    },
+    onSuccess: (tag, _input, context) => {
+      queryClient.setQueryData<TransactionTag[]>(['tags'], x => (x ?? []).map(y => y.id === context.optimisticTagId ? tag : y))
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['tags'] })
     }
   })
@@ -58,12 +81,29 @@ export function Transactions() {
       queryClient.invalidateQueries({ queryKey: ['merchant-tags'] })
     }
   })
-  function setTransactionTags(transactionId: string, tagIds: string[]) {
-    void api<TransactionTag[]>(`/api/transactions/${transactionId}/tags`, {
+  const updateTransactionTags = useMutation({
+    mutationFn: (input: SetTransactionTagsInput) => api<TransactionTag[]>(`/api/transactions/${input.transactionId}/tags`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tagIds })
-    })
+      body: JSON.stringify({ tagIds: input.tagIds })
+    }),
+    onMutate: async input => {
+      await queryClient.cancelQueries({ queryKey: ['transactions'] })
+      const previousTransactions = queryClient.getQueryData<Transaction[]>(['transactions'])
+      const allTags = queryClient.getQueryData<TransactionTag[]>(['tags']) ?? []
+      const nextTags = allTags.filter(x => input.tagIds.includes(x.id))
+      queryClient.setQueryData<Transaction[]>(['transactions'], x => (x ?? []).map(y => y.id === input.transactionId ? { ...y, tags: nextTags } : y))
+      return { previousTransactions }
+    },
+    onError: (_error, _input, context) => {
+      queryClient.setQueryData(['transactions'], context?.previousTransactions)
+    },
+    onSuccess: (nextTags, input) => {
+      queryClient.setQueryData<Transaction[]>(['transactions'], x => (x ?? []).map(y => y.id === input.transactionId ? { ...y, tags: nextTags } : y))
+    }
+  })
+  function setTransactionTags(transactionId: string, tagIds: string[]) {
+    updateTransactionTags.mutate({ transactionId, tagIds })
   }
   const createMerchantRule = useMutation({
     mutationFn: () => api<MerchantTagRule>('/api/merchant-tags', {
@@ -190,7 +230,7 @@ export function Transactions() {
                 ))}
                 <input aria-label="Custom tag color" className="h-6 w-8 rounded border-0 bg-transparent p-0" onChange={x => setTagColor(x.target.value)} type="color" value={tagColor} />
               </div>
-              <Button className="h-9" disabled={!tagName.trim() || createTag.isPending} onClick={() => createTag.mutate()} size="sm">
+              <Button className="h-9" disabled={!tagName.trim() || createTag.isPending} onClick={() => createTag.mutate({ name: tagName.trim(), color: tagColor })} size="sm">
                 <Plus data-icon="inline-start" />
                 Add
               </Button>
