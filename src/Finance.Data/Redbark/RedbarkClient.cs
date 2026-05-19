@@ -165,6 +165,6 @@ public sealed class RedbarkClient(HttpClient httpClient, IOptions<RedbarkOptions
 
     private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
+        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture).ToUniversalTime();
     }
 }

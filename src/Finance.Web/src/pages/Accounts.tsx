@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, DatabaseZap } from 'lucide-react'
+import { Activity, DatabaseZap, Loader2 } from 'lucide-react'
 import { AccountsList } from '../components/AccountsList'
 import { Header } from '../components/Header'
 import { Button } from '../components/ui/button'
@@ -52,10 +52,15 @@ export function Accounts() {
       <Header title="Accounts" subtitle="Connected Redbark accounts and current balances." />
       <div className="flex flex-wrap gap-2">
         <Button disabled={isOperating} onClick={() => discoverAccounts.mutate()}>
-          <DatabaseZap data-icon="inline-start" />
+          {discoverAccounts.isPending ? <Loader2 className="size-4 animate-spin" data-icon="inline-start" /> : <DatabaseZap data-icon="inline-start" />}
           {discoverAccounts.isPending ? 'Discovering accounts' : 'Discover accounts'}
         </Button>
       </div>
+      {discoverAccounts.isPending && (
+        <div className="h-1 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/3 animate-[loading-slide_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        </div>
+      )}
       {(activeOperation || imports.data?.some(x => x.status === 'running')) && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
           <Activity className="size-4 animate-pulse text-foreground" />

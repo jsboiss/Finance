@@ -593,6 +593,6 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
     private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
     {
-        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture);
+        return string.IsNullOrWhiteSpace(value) ? null : DateTimeOffset.Parse(value, CultureInfo.InvariantCulture).ToUniversalTime();
     }
 }
