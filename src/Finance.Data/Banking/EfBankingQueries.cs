@@ -808,6 +808,23 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        var staleCutoff = DateTimeOffset.UtcNow.AddHours(-1);
+        var staleRuns = await dbContext.ImportRuns
+            .Where(x => x.TenantId == tenantId && x.Status == "running" && x.StartedAt < staleCutoff)
+            .ToListAsync(cancellationToken);
+
+        foreach (var run in staleRuns)
+        {
+            run.Status = "failed";
+            run.CompletedAt = DateTimeOffset.UtcNow;
+            run.Error ??= "Import was marked failed because it did not finish within one hour.";
+        }
+
+        if (staleRuns.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         return await dbContext.ImportRuns
             .Where(x => x.TenantId == tenantId)
             .OrderByDescending(x => x.StartedAt)

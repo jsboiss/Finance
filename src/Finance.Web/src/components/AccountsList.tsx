@@ -1,6 +1,7 @@
-import { Check, DatabaseZap, Pencil, Trash2, X } from 'lucide-react'
+import { Check, CheckCircle2, DatabaseZap, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { currency } from '../lib/format'
+import { cn } from '../lib/utils'
 import type { Account } from '../lib/types'
 
 export function AccountsList({
@@ -8,6 +9,8 @@ export function AccountsList({
   isLoading,
   isSaving,
   isOperating,
+  syncingAccountId,
+  lastSyncedAccountId,
   onUpdate,
   onSync,
   onClear
@@ -16,6 +19,8 @@ export function AccountsList({
   isLoading: boolean
   isSaving: boolean
   isOperating: boolean
+  syncingAccountId: string | null
+  lastSyncedAccountId: string | null
   onUpdate: (accountId: string, customName: string, accountType: Account['accountType']) => void
   onSync: (accountId: string) => void
   onClear: (accountId: string, displayName: string) => void
@@ -44,7 +49,13 @@ export function AccountsList({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
       {accounts.map(account => (
-        <div className="grid gap-3 border-b border-border p-4 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center" key={account.id}>
+        <div
+          className={cn(
+            'grid gap-3 border-b border-border p-4 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center',
+            account.id === syncingAccountId && 'bg-primary/5'
+          )}
+          key={account.id}
+        >
           <div className="min-w-0">
             <p className="text-sm text-muted-foreground">{account.institutionName}</p>
             {editingAccountId === account.id ? (
@@ -87,6 +98,8 @@ export function AccountsList({
                     {account.customName ? `${account.name} - ` : ''}{formatAccountType(account.accountType)}
                     {!account.includeInEverydayAnalytics ? ' - excluded from everyday analytics' : ''}
                   </p>
+                  {account.id === syncingAccountId && <p className="mt-1 text-xs font-medium text-foreground">Syncing now</p>}
+                  {account.id === lastSyncedAccountId && account.id !== syncingAccountId && <p className="mt-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">Sync complete</p>}
                 </div>
                 <button aria-label={`Edit custom name for ${account.displayName}`} className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground" onClick={() => startEditing(account)} type="button">
                   <Pencil className="size-4" />
@@ -97,7 +110,7 @@ export function AccountsList({
           <div className="flex flex-wrap items-center gap-2 md:justify-end">
             <p className="mr-2 text-xl font-semibold">{currency(account.currentBalanceMinorUnits, account.currency)}</p>
             <button aria-label={`Sync ${account.displayName}`} className="inline-flex size-9 items-center justify-center rounded-md border border-input hover:bg-muted disabled:opacity-50" disabled={isOperating} onClick={() => onSync(account.id)} type="button">
-              <DatabaseZap className="size-4" />
+              {account.id === syncingAccountId ? <Loader2 className="size-4 animate-spin" /> : account.id === lastSyncedAccountId ? <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" /> : <DatabaseZap className="size-4" />}
             </button>
             <button aria-label={`Clear imported data for ${account.displayName}`} className="inline-flex size-9 items-center justify-center rounded-md border border-input text-destructive hover:bg-destructive/10 disabled:opacity-50" disabled={isOperating} onClick={() => onClear(account.id, account.displayName)} type="button">
               <Trash2 className="size-4" />

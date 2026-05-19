@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, DatabaseZap, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { AccountsList } from '../components/AccountsList'
 import { Header } from '../components/Header'
 import { ListLoading } from '../components/LoadingSkeletons'
@@ -9,6 +10,7 @@ import type { Account, ImportRun } from '../lib/types'
 
 export function Accounts() {
   const queryClient = useQueryClient()
+  const [lastSyncedAccountId, setLastSyncedAccountId] = useState<string | null>(null)
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const imports = useQuery({ queryKey: ['imports'], queryFn: () => api<ImportRun[]>('/api/imports'), refetchInterval: x => hasRunningImport(x.state.data) ? 3000 : false })
   const updateAccount = useMutation({
@@ -28,7 +30,10 @@ export function Accounts() {
   })
   const syncAccount = useMutation({
     mutationFn: (accountId: string) => api<void>(`/api/operations/accounts/${accountId}/backfill`, { method: 'POST' }),
-    onSuccess: () => invalidateAccountData(queryClient)
+    onSuccess: (_, accountId) => {
+      setLastSyncedAccountId(accountId)
+      invalidateAccountData(queryClient)
+    }
   })
   const clearAccount = useMutation({
     mutationFn: (accountId: string) => api<void>(`/api/operations/accounts/${accountId}/data`, { method: 'DELETE' }),
@@ -41,6 +46,17 @@ export function Accounts() {
     [syncAccount.isPending, 'Syncing account'],
     [clearAccount.isPending, 'Clearing account data']
   ])
+  const hasActiveImport = hasRunningImport(imports.data)
+  const syncingAccountId = syncAccount.isPending ? syncAccount.variables : null
+
+  useEffect(() => {
+    if (!lastSyncedAccountId) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => setLastSyncedAccountId(null), 6000)
+    return () => window.clearTimeout(timeout)
+  }, [lastSyncedAccountId])
 
   function onClearAccount(accountId: string, displayName: string) {
     if (window.confirm(`Clear imported transactions and balances for ${displayName}?`)) {
@@ -62,24 +78,14 @@ export function Accounts() {
           <div className="h-full w-1/3 animate-[loading-slide_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
         </div>
       )}
-      {(activeOperation || imports.data?.some(x => x.status === 'running')) && (
+      {(activeOperation || hasActiveImport) && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
           <Activity className="size-4 animate-pulse text-foreground" />
           <span>{activeOperation ?? 'Sync is still running'}. Account data refreshes when the operation finishes.</span>
         </div>
       )}
-      {imports.data?.slice(0, 3).map(x => (
-        <div className="grid gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm" key={x.id}>
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium">{x.source}</span>
-            <span className={x.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{x.status}</span>
-          </div>
-          <span className="text-muted-foreground">{x.importedCount} imported{x.completedAt ? `, completed ${new Date(x.completedAt).toLocaleString()}` : ''}</span>
-          {x.error && <span className="text-destructive">{x.error}</span>}
-        </div>
-      ))}
       {(discoverAccounts.error || syncAccount.error || clearAccount.error) && (
-        <p className="text-sm text-destructive">Operation failed. Check the latest import card or Railway logs for details.</p>
+        <p className="text-sm text-destructive">Operation failed. Check the imports page or Railway logs for details.</p>
       )}
       {accounts.isLoading ? (
         <ListLoading />
@@ -89,9 +95,11 @@ export function Accounts() {
           isLoading={accounts.isLoading}
           isOperating={isOperating}
           isSaving={updateAccount.isPending}
+          lastSyncedAccountId={lastSyncedAccountId}
           onClear={onClearAccount}
           onUpdate={(accountId, customName, accountType) => updateAccount.mutate({ accountId, customName, accountType })}
           onSync={accountId => syncAccount.mutate(accountId)}
+          syncingAccountId={syncingAccountId}
         />
       )}
     </section>
@@ -99,7 +107,8 @@ export function Accounts() {
 }
 
 function hasRunningImport(imports: ImportRun[] | undefined) {
-  return imports?.some(x => x.status === 'running') ?? false
+  const staleCutoff = Date.now() - (60 * 60 * 1000)
+  return imports?.some(x => x.status === 'running' && new Date(x.startedAt).getTime() >= staleCutoff) ?? false
 }
 
 function getActiveOperation(operations: Array<[boolean, string]>) {
