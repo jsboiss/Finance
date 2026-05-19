@@ -44,6 +44,8 @@ export function Overview() {
   const [showAverageDailySpendHistory, setShowAverageDailySpendHistory] = useState(false)
   const isAllAccounts = overviewAccountId === 'all'
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
+  const selectedAccount = useMemo(() => accounts.data?.find(x => x.id === overviewAccountId), [accounts.data, overviewAccountId])
+  const showSavingsTrajectory = selectedAccount ? hasSavingsNickname(selectedAccount) : false
   const overview = useQuery({
     queryKey: ['overview', overviewAccountId, includeInternalTransfers],
     placeholderData: keepPreviousData,
@@ -86,7 +88,7 @@ export function Overview() {
     }
   })
   const savingsTrajectory = useQuery({
-    enabled: !isAllAccounts,
+    enabled: showSavingsTrajectory,
     placeholderData: x => x,
     queryKey: ['savings-trajectory', overviewAccountId],
     queryFn: () => api<SavingsTrajectorySummary>(`/api/accounts/${overviewAccountId}/savings-trajectory`)
@@ -168,12 +170,12 @@ export function Overview() {
         </CardContent>
       </Card>
 
-      {!isAllAccounts && (
+      {showSavingsTrajectory && (
         <Card>
           <CardHeader>
             <div>
               <CardTitle>Savings trajectory</CardTitle>
-              <CardDescription>{getSelectedAccountName(accounts.data, overviewAccountId)}</CardDescription>
+              <CardDescription>{selectedAccount?.displayName ?? 'Selected account'}</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -282,8 +284,9 @@ function mapAverageDailySpendHistory(days?: OverviewMetricSnapshot[]) {
   }))
 }
 
-function getSelectedAccountName(accounts: Account[] | undefined, accountId: string) {
-  return accounts?.find(x => x.id === accountId)?.displayName ?? 'Selected account'
+function hasSavingsNickname(account: Account) {
+  const nickname = account.customName.trim() || account.displayName
+  return nickname.toLowerCase().includes('savings')
 }
 
 function OverviewLoading() {
@@ -330,11 +333,12 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
   const projectedGrowth = finalPoint && projectionStart ? finalPoint.balanceMinorUnits - projectionStart.balanceMinorUnits : 0
   const currencyCode = trajectory?.currency ?? 'AUD'
   const yTicks = getCurrencyTicks(min, max, 4)
-  const monthTicks = getMonthTicks(allPoints).map(x => {
+  const yTickTops = yTicks.map(x => toTrajectoryTop(x, height, padding, min, range))
+  const monthTicks = getSpacedMonthTicks(getMonthTicks(allPoints).map(x => {
     const index = allPoints.findIndex(y => y.key === x.key)
     const left = index < 0 ? padding.left : toTrajectoryLeft(index, totalPoints, width, padding)
     return { ...x, left }
-  })
+  }))
   const hoverPoints = [
     ...actualPoints.filter(x => x.depositMinorUnits > 0 || x.interestMinorUnits > 0 || x.withdrawalMinorUnits > 0),
     ...projectionPoints.filter((_x, index) => (index + 1) % 30 === 0 || index === projectionPoints.length - 1)
@@ -355,8 +359,8 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
       <div className="relative h-[22rem]">
         <div className="absolute inset-0 overflow-hidden rounded-md border border-border bg-muted">
           <svg className="h-full w-full" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
-            {yTicks.map(x => {
-              const top = toTrajectoryTop(x, height, padding, min, range)
+            {yTicks.map((x, index) => {
+              const top = yTickTops[index]
               return <g key={x}>
                 <path d={`M ${padding.left} ${top} H ${width - padding.right}`} fill="none" stroke="currentColor" strokeOpacity="0.08" />
                 <text fill="currentColor" fontSize="11" opacity="0.55" x={padding.left - 10} y={top + 4} textAnchor="end">{formatCompactCurrency(x, currencyCode)}</text>
@@ -378,7 +382,7 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
         {finalPoint && (
           <div
             className="pointer-events-none absolute z-10 max-w-48 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg"
-            style={{ left: `${Math.min(78, Math.max(48, (finalPoint.left / width) * 100))}%`, top: `${Math.max(8, ((finalPoint.top / height) * 100) - 8)}%` }}
+            style={{ left: `${Math.min(78, Math.max(48, (finalPoint.left / width) * 100))}%`, top: `${getProjectionLabelTop(finalPoint.top, yTickTops, height)}%` }}
           >
             <p className="font-medium">6-month projection</p>
             <p className="mt-1 text-base font-semibold">{currency(finalPoint.balanceMinorUnits, currencyCode)}</p>
@@ -454,6 +458,16 @@ function toTrajectoryTop(value: number, height: number, padding: ChartPadding, m
   return height - padding.bottom - ((value - min) / range) * (height - padding.top - padding.bottom)
 }
 
+function getProjectionLabelTop(pointTop: number, yTickTops: number[], height: number) {
+  const labelHeight = 68
+  const tickClearance = 22
+  const preferredTop = pointTop - labelHeight - 10
+  const top = yTickTops.some(x => Math.abs(x - pointTop) < tickClearance)
+    ? pointTop + 14
+    : preferredTop
+  return (Math.min(height - labelHeight - 8, Math.max(8, top)) / height) * 100
+}
+
 function toSmoothPath(points: { left: number; top: number }[]) {
   if (points.length <= 1) {
     return points.length === 1 ? `M ${points[0].left} ${points[0].top}` : ''
@@ -509,6 +523,20 @@ function getMonthTicks(points: { key: string }[]) {
   }
 
   return [...ticks.values()]
+}
+
+function getSpacedMonthTicks(ticks: { key: string; label: string; left: number }[]) {
+  const minimumLabelGap = 44
+  return ticks.reduce<{ key: string; label: string; left: number }[]>((x, y) => {
+    const previous = x.at(-1)
+    if (!previous || y.left - previous.left >= minimumLabelGap) {
+      return [...x, y]
+    }
+
+    return x.length === 1
+      ? [y]
+      : x
+  }, [])
 }
 
 function formatCompactCurrency(value: number, code: string) {
