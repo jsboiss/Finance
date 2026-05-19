@@ -6,7 +6,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { api } from '../lib/api'
-import type { ApiClient, CreateApiClientResponse, ImportRun, Tenant, TenantAdminAccount, TenantConnections } from '../lib/types'
+import type { ApiClient, CreateApiClientResponse, ImportRun, Tenant, TenantConnections } from '../lib/types'
 
 export function Settings() {
   const queryClient = useQueryClient()
@@ -22,11 +22,6 @@ export function Settings() {
     enabled: !!selectedTenantId,
     queryKey: ['tenant-connections', selectedTenantId],
     queryFn: () => api<TenantConnections>(`/api/admin/tenants/${selectedTenantId}/redbark/connections`)
-  })
-  const tenantAccounts = useQuery({
-    enabled: !!selectedTenantId,
-    queryKey: ['tenant-admin-accounts', selectedTenantId],
-    queryFn: () => api<TenantAdminAccount[]>(`/api/admin/tenants/${selectedTenantId}/redbark/accounts`)
   })
   const tenantImports = useQuery({
     enabled: !!selectedTenantId,
@@ -286,33 +281,19 @@ export function Settings() {
             {(discoverAccounts.error || backfill.error || reconcile.error || clearTenantData.error) && (
               <p className="text-sm text-destructive">Tenant operation failed. Check the latest import row for details.</p>
             )}
-            <div className="grid gap-3 xl:grid-cols-2">
-              <div className="grid gap-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Imported account metadata</p>
-                {(tenantAccounts.data ?? []).map(x => (
-                  <div className="rounded-md border border-border px-3 py-2" key={x.id}>
-                    <p className="text-sm font-medium">{x.customName || x.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {x.institutionName} - {x.accountNumber || 'No account number'} - {x.currency}
-                    </p>
+            <div className="grid gap-2">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Latest tenant imports</p>
+              {(tenantImports.data ?? []).map(x => (
+                <div className="rounded-md border border-border px-3 py-2" key={x.id}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{x.source}</p>
+                    <Badge variant={x.status === 'failed' ? 'destructive' : 'secondary'}>{x.status}</Badge>
                   </div>
-                ))}
-                {!tenantAccounts.isLoading && tenantAccounts.data?.length === 0 && <p className="text-sm text-muted-foreground">No account metadata imported yet.</p>}
-              </div>
-              <div className="grid gap-2">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Latest tenant imports</p>
-                {(tenantImports.data ?? []).map(x => (
-                  <div className="rounded-md border border-border px-3 py-2" key={x.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium">{x.source}</p>
-                      <Badge variant={x.status === 'failed' ? 'destructive' : 'secondary'}>{x.status}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{x.importedCount} imported - {new Date(x.startedAt).toLocaleString()}</p>
-                    {x.error && <p className="mt-1 text-xs text-destructive">{x.error}</p>}
-                  </div>
-                ))}
-                {!tenantImports.isLoading && tenantImports.data?.length === 0 && <p className="text-sm text-muted-foreground">No tenant imports yet.</p>}
-              </div>
+                  <p className="text-xs text-muted-foreground">{x.importedCount} imported - {new Date(x.startedAt).toLocaleString()}</p>
+                  {x.error && <p className="mt-1 text-xs text-destructive">{x.error}</p>}
+                </div>
+              ))}
+              {!tenantImports.isLoading && tenantImports.data?.length === 0 && <p className="text-sm text-muted-foreground">No tenant imports yet.</p>}
             </div>
           </>
         )}
@@ -355,6 +336,5 @@ function useTenantOperation(selectedTenantId: string, path: string, queryClient:
 
 function invalidateTenantAdminData(queryClient: ReturnType<typeof useQueryClient>, tenantId: string) {
   void queryClient.invalidateQueries({ queryKey: ['tenant-connections', tenantId] })
-  void queryClient.invalidateQueries({ queryKey: ['tenant-admin-accounts', tenantId] })
   void queryClient.invalidateQueries({ queryKey: ['tenant-imports', tenantId] })
 }

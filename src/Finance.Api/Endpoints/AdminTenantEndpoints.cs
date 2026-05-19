@@ -20,7 +20,6 @@ public static class AdminTenantEndpoints
         group.MapGet("/{tenantId:guid}/redbark/connections", GetConnections);
         group.MapPost("/{tenantId:guid}/redbark/connections", AssignConnection);
         group.MapDelete("/{tenantId:guid}/redbark/connections/{externalConnectionId}", UnassignConnection);
-        group.MapGet("/{tenantId:guid}/redbark/accounts", GetAccounts);
         group.MapGet("/{tenantId:guid}/imports", GetImports);
         group.MapPost("/{tenantId:guid}/operations/accounts/discover", DiscoverAccounts);
         group.MapPost("/{tenantId:guid}/operations/backfill", Backfill);
@@ -109,7 +108,7 @@ public static class AdminTenantEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<Results<Ok<List<TenantAccountAdminDto>>, NotFound>> GetAccounts(Guid tenantId, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task<Results<Ok<List<ImportRunDto>>, NotFound>> GetImports(Guid tenantId, FinanceDbContext dbContext, IConfiguration configuration, CancellationToken cancellationToken)
     {
         var exists = await dbContext.Tenants.AnyAsync(x => x.Id == tenantId, cancellationToken);
         if (!exists)
@@ -117,35 +116,25 @@ public static class AdminTenantEndpoints
             return TypedResults.NotFound();
         }
 
-        var accounts = await dbContext.BankAccounts
-            .Where(x => x.TenantId == tenantId)
-            .Join(dbContext.BankConnections.Where(x => x.TenantId == tenantId),
-                x => x.BankConnectionId,
-                y => y.Id,
-                (x, y) => new TenantAccountAdminDto(x.Id, x.Name, x.CustomName, x.AccountNumber, y.InstitutionName, x.Currency))
-            .OrderBy(x => x.InstitutionName)
-            .ThenBy(x => x.Name)
-            .ToListAsync(cancellationToken);
-
-        return TypedResults.Ok(accounts);
-    }
-
-    private static async Task<Results<Ok<List<ImportRunDto>>, NotFound>> GetImports(Guid tenantId, FinanceDbContext dbContext, CancellationToken cancellationToken)
-    {
-        var exists = await dbContext.Tenants.AnyAsync(x => x.Id == tenantId, cancellationToken);
-        if (!exists)
-        {
-            return TypedResults.NotFound();
-        }
-
+        var canShowBankingLabels = tenantId == GetOwnerTenantId(configuration);
         var imports = await dbContext.ImportRuns
             .Where(x => x.TenantId == tenantId)
             .OrderByDescending(x => x.StartedAt)
             .Take(10)
-            .Select(x => new ImportRunDto(x.Id, x.Source, x.Status, x.StartedAt, x.CompletedAt, x.ImportedCount, x.Error))
+            .Select(x => new ImportRunDto(x.Id, canShowBankingLabels ? x.Source : RedactAdminImportSource(x.Source), x.Status, x.StartedAt, x.CompletedAt, x.ImportedCount, x.Error))
             .ToListAsync(cancellationToken);
 
         return TypedResults.Ok(imports);
+    }
+
+    private static string RedactAdminImportSource(string source)
+    {
+        return source.StartsWith("account-backfill:", StringComparison.OrdinalIgnoreCase) ? "account-backfill" : source;
+    }
+
+    private static Guid GetOwnerTenantId(IConfiguration configuration)
+    {
+        return Guid.TryParse(configuration["OwnerTenantId"], out var tenantId) ? tenantId : Guid.Parse("11111111-1111-1111-1111-111111111111");
     }
 
     private static async Task<Results<Accepted, NotFound>> DiscoverAccounts(Guid tenantId, IRedbarkImportService imports, FinanceDbContext dbContext, CancellationToken cancellationToken)
@@ -227,6 +216,4 @@ public static class AdminTenantEndpoints
     private sealed record RedbarkConnectionAssignmentDto(string ExternalConnectionId, string InstitutionName, DateTimeOffset CreatedAt);
 
     private sealed record AssignConnectionRequest(string ExternalConnectionId, string? InstitutionName);
-
-    private sealed record TenantAccountAdminDto(Guid Id, string Name, string CustomName, string AccountNumber, string InstitutionName, string Currency);
 }

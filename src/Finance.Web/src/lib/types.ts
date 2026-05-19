@@ -265,15 +265,6 @@ export type RedbarkConnectionAssignment = {
   createdAt: string
 }
 
-export type TenantAdminAccount = {
-  id: string
-  name: string
-  customName: string
-  accountNumber: string
-  institutionName: string
-  currency: string
-}
-
 export type CreateApiClientResponse = {
   client: ApiClient
   apiKey: string

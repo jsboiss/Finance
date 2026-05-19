@@ -1,4 +1,4 @@
-# External Agent Setup
+# Setup
 
 This guide is for an agent or developer building their own UI against Finance.
 
