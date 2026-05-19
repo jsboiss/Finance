@@ -147,6 +147,7 @@ public sealed class BudgetProfile
     public string Name { get; set; } = "";
     public long WeeklyLimitMinorUnits { get; set; }
     public string Currency { get; set; } = "AUD";
+    public int WeekStartsOn { get; set; } = 1;
     public string CategoryMatchers { get; set; } = "[]";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

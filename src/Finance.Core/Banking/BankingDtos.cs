@@ -111,6 +111,7 @@ public sealed record BudgetProfileDto(
     string Name,
     long WeeklyLimitMinorUnits,
     string Currency,
+    int WeekStartsOn,
     IReadOnlyList<string> CategoryMatchers,
     IReadOnlyList<TransactionTagDto> Tags,
     BudgetWeekDto CurrentWeek,
@@ -126,9 +127,9 @@ public sealed record BudgetWeekDto(
 
 public sealed record BudgetTransactionDto(Guid Id, string Description, string? MerchantName, string Category, long AmountMinorUnits, string Currency, DateOnly PostedDate, IReadOnlyList<TransactionTagDto> Tags);
 
-public sealed record CreateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
+public sealed record CreateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, int? WeekStartsOn, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
 
-public sealed record UpdateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
+public sealed record UpdateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, int? WeekStartsOn, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
 
 public sealed record SubscriptionDto(
     Guid Id,

@@ -19,7 +19,7 @@ export function Shell() {
           <NavLink to="/accounts" icon={<Banknote className="size-4" />} label="Accounts" />
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/budgets" icon={<Target className="size-4" />} label="Budgets" />
-          <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Pay breakdowns" />
+          <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Breakdowns" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />
           <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
           <NavLink to="/settings" icon={<SettingsIcon className="size-4" />} label="Settings" />
@@ -38,7 +38,7 @@ export function Shell() {
           <NavLink to="/accounts" icon={<Banknote className="size-4" />} label="Accounts" />
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/budgets" icon={<Target className="size-4" />} label="Budgets" />
-          <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Pay breakdowns" />
+          <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Breakdowns" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />
           <NavLink to="/imports" icon={<RefreshCcw className="size-4" />} label="Imports" />
           <NavLink to="/settings" icon={<SettingsIcon className="size-4" />} label="Settings" />

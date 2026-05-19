@@ -13,6 +13,7 @@ type FormState = {
   id?: string
   name: string
   weeklyLimit: string
+  weekStartsOn: string
   categoryMatchers: string
   tagIds: string[]
 }
@@ -20,9 +21,20 @@ type FormState = {
 const emptyForm: FormState = {
   name: 'Eating out',
   weeklyLimit: '',
+  weekStartsOn: '1',
   categoryMatchers: 'Eating Out, Restaurants, Fast Food, Cafes',
   tagIds: []
 }
+
+const weekDays = [
+  { value: '0', label: 'Sunday' },
+  { value: '1', label: 'Monday' },
+  { value: '2', label: 'Tuesday' },
+  { value: '3', label: 'Wednesday' },
+  { value: '4', label: 'Thursday' },
+  { value: '5', label: 'Friday' },
+  { value: '6', label: 'Saturday' }
+]
 
 export function Budgets() {
   const queryClient = useQueryClient()
@@ -44,6 +56,7 @@ export function Budgets() {
         name: form.name,
         weeklyLimitMinorUnits: dollarsToMinorUnits(form.weeklyLimit),
         currency: 'AUD',
+        weekStartsOn: Number(form.weekStartsOn),
         categoryMatchers: splitCategoryMatchers(form.categoryMatchers),
         tagIds: form.tagIds
       })
@@ -76,6 +89,7 @@ export function Budgets() {
       id: budget.id,
       name: budget.name,
       weeklyLimit: minorUnitsToDollars(budget.weeklyLimitMinorUnits),
+      weekStartsOn: `${budget.weekStartsOn}`,
       categoryMatchers: budget.categoryMatchers.join(', '),
       tagIds: budget.tags.map(x => x.id)
     })
@@ -96,9 +110,12 @@ export function Budgets() {
           <CardDescription>Transactions count when their category matches one of the category terms, or when they have one of the selected tags.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,1.5fr)]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,0.7fr)_minmax(0,1.5fr)]">
             <input className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setForm(y => ({ ...y, name: x.target.value }))} placeholder="Budget name" value={form.name} />
             <input className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" inputMode="decimal" onChange={x => setForm(y => ({ ...y, weeklyLimit: x.target.value }))} placeholder="Weekly limit" value={form.weeklyLimit} />
+            <select className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setForm(y => ({ ...y, weekStartsOn: x.target.value }))} value={form.weekStartsOn}>
+              {weekDays.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+            </select>
             <input className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30" onChange={x => setForm(y => ({ ...y, categoryMatchers: x.target.value }))} placeholder="Category terms" value={form.categoryMatchers} />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -155,7 +172,7 @@ function BudgetCard({ budget, isHistoryOpen, onDelete, onEdit, onToggleHistory }
       <CardHeader>
         <div>
           <CardTitle>{budget.name}</CardTitle>
-          <CardDescription>{formatDate(currentWeek.from)} to {formatDate(currentWeek.to)}</CardDescription>
+          <CardDescription>{formatDate(currentWeek.from)} to {formatDate(currentWeek.to)} - starts {getWeekDayLabel(budget.weekStartsOn)}</CardDescription>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => onEdit(budget)} size="icon" title="Edit budget" variant="outline"><Edit3 className="size-4" /></Button>
@@ -243,6 +260,10 @@ function dollarsToMinorUnits(value: string) {
 
 function minorUnitsToDollars(value: number) {
   return (value / 100).toFixed(2)
+}
+
+function getWeekDayLabel(value: number) {
+  return weekDays.find(x => x.value === `${value}`)?.label ?? 'Monday'
 }
 
 function formatDate(value: string) {

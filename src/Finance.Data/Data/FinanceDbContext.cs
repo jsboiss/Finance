@@ -71,6 +71,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         {
             x.HasIndex(y => new { y.TenantId, y.Name }).IsUnique();
             x.Property(y => y.Currency).HasDefaultValue("AUD");
+            x.Property(y => y.WeekStartsOn).HasDefaultValue(1);
             x.Property(y => y.CategoryMatchers).HasDefaultValue("[]");
         });
         modelBuilder.Entity<BudgetProfileTag>(x =>

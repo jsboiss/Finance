@@ -610,6 +610,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             Name = CleanRequired(request.Name, "Budget name is required."),
             WeeklyLimitMinorUnits = Math.Max(0, request.WeeklyLimitMinorUnits),
             Currency = CleanCurrency(request.Currency ?? "AUD"),
+            WeekStartsOn = CleanWeekStartsOn(request.WeekStartsOn),
             CategoryMatchers = JsonSerializer.Serialize(CleanCategoryMatchers(request.CategoryMatchers))
         };
 
@@ -632,6 +633,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         profile.Name = CleanRequired(request.Name, "Budget name is required.");
         profile.WeeklyLimitMinorUnits = Math.Max(0, request.WeeklyLimitMinorUnits);
         profile.Currency = CleanCurrency(request.Currency ?? profile.Currency);
+        profile.WeekStartsOn = CleanWeekStartsOn(request.WeekStartsOn);
         profile.CategoryMatchers = JsonSerializer.Serialize(CleanCategoryMatchers(request.CategoryMatchers));
         profile.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -1637,9 +1639,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .GroupBy(x => x.BudgetProfileId)
             .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var currentWeekStart = GetWeekStart(today);
-        var from = currentWeekStart.AddDays(-7 * 11);
-        var to = currentWeekStart.AddDays(6);
+        var weekStarts = profiles.Select(x => GetWeekStart(today, x.WeekStartsOn)).ToList();
+        var from = weekStarts.Min().AddDays(-7 * 11);
+        var to = weekStarts.Max().AddDays(6);
         var transactions = await dbContext.BankTransactions
             .AsNoTracking()
             .Where(x => x.TenantId == tenantId
@@ -1665,6 +1667,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             {
                 var categoryMatchers = ParseCategoryMatchers(x.CategoryMatchers);
                 var tags = profileTags.GetValueOrDefault(x.Id, []);
+                var currentWeekStart = GetWeekStart(today, x.WeekStartsOn);
                 var weeks = GetBudgetWeeks(x.WeeklyLimitMinorUnits, categoryMatchers, tags.Select(y => y.Id).ToHashSet(), transactions, tagsByTransaction, currentWeekStart);
 
                 return new BudgetProfileDto(
@@ -1672,6 +1675,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                     x.Name,
                     x.WeeklyLimitMinorUnits,
                     x.Currency,
+                    x.WeekStartsOn,
                     categoryMatchers,
                     tags,
                     weeks.First(),
@@ -1755,9 +1759,19 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
     }
 
-    private static DateOnly GetWeekStart(DateOnly date)
+    private static int CleanWeekStartsOn(int? weekStartsOn)
     {
-        var offset = ((int)date.DayOfWeek + 6) % 7;
+        if (weekStartsOn is >= 0 and <= 6)
+        {
+            return weekStartsOn.Value;
+        }
+
+        return 1;
+    }
+
+    private static DateOnly GetWeekStart(DateOnly date, int weekStartsOn)
+    {
+        var offset = ((int)date.DayOfWeek - weekStartsOn + 7) % 7;
         return date.AddDays(-offset);
     }
 

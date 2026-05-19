@@ -177,6 +177,7 @@ export type BudgetProfile = {
   name: string
   weeklyLimitMinorUnits: number
   currency: string
+  weekStartsOn: number
   categoryMatchers: string[]
   tags: TransactionTag[]
   currentWeek: BudgetWeek
