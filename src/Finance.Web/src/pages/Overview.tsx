@@ -45,7 +45,7 @@ export function Overview() {
   const isAllAccounts = overviewAccountId === 'all'
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const selectedAccount = useMemo(() => accounts.data?.find(x => x.id === overviewAccountId), [accounts.data, overviewAccountId])
-  const showSavingsTrajectory = selectedAccount ? hasSavingsNickname(selectedAccount) : false
+  const showSavingsTrajectory = selectedAccount?.accountType === 'Savings'
   const overview = useQuery({
     queryKey: ['overview', overviewAccountId, includeInternalTransfers],
     placeholderData: keepPreviousData,
@@ -111,7 +111,7 @@ export function Overview() {
             value={overviewAccountId}
           >
             <option value="all">All accounts</option>
-            {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+            {(accounts.data ?? []).filter(x => x.includeInEverydayAnalytics).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
           </select>
           <label className={isAllAccounts ? 'inline-flex items-center gap-2 text-sm text-muted-foreground opacity-60' : 'inline-flex items-center gap-2 text-sm text-muted-foreground'}>
             <input
@@ -282,11 +282,6 @@ function mapAverageDailySpendHistory(days?: OverviewMetricSnapshot[]) {
     key: x.key,
     value: x.averageDailySpendMinorUnits
   }))
-}
-
-function hasSavingsNickname(account: Account) {
-  const nickname = account.customName.trim() || account.displayName
-  return nickname.toLowerCase().includes('savings')
 }
 
 function OverviewLoading() {

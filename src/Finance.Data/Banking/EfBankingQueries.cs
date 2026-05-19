@@ -32,7 +32,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var accountRows = await accounts
             .OrderBy(x => x.CustomName == "" ? x.Name : x.CustomName)
-            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.CustomName, x.AccountNumber, x.Currency))
+            .Select(x => new AccountRow(x.Id, x.BankConnectionId, x.Name, x.CustomName, x.AccountType, x.AccountNumber, x.Currency))
             .ToListAsync(cancellationToken);
 
         var connectionIds = accountRows.Select(x => x.BankConnectionId).Distinct().ToList();
@@ -58,6 +58,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 x.Id,
                 x.Name,
                 x.CustomName,
+                x.AccountType,
+                IsEverydayAnalyticsAccount(x.AccountType),
                 x.AccountNumber,
                 GetAccountDisplayName(x.Name, x.CustomName, x.AccountNumber),
                 institutions.GetValueOrDefault(x.BankConnectionId, ""),
@@ -76,6 +78,11 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
 
         account.CustomName = request.CustomName?.Trim() ?? "";
+        if (request.AccountType is not null)
+        {
+            account.AccountType = CleanAccountType(request.AccountType);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
         return (await GetAccountDtos(tenantId, accountId, cancellationToken)).FirstOrDefault();
     }
@@ -100,7 +107,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
 
         var accountIds = await dbContext.BankAccounts
-            .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
+            .Where(x => x.TenantId == tenantId
+                && (accountId == null || x.Id == accountId)
+                && (accountId != null || (x.AccountType != "HomeLoan" && x.AccountType != "Offset" && x.AccountType != "Other")))
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
 
@@ -237,7 +246,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
         var scopeKey = GetOverviewMetricScopeKey(accountId, shouldIncludeInternalTransfers);
         var accountIds = await dbContext.BankAccounts
-            .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
+            .Where(x => x.TenantId == tenantId
+                && (accountId == null || x.Id == accountId)
+                && (accountId != null || (x.AccountType != "HomeLoan" && x.AccountType != "Offset" && x.AccountType != "Other")))
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
 
@@ -375,7 +386,9 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
 
         var accountIds = await dbContext.BankAccounts
-            .Where(x => x.TenantId == tenantId && (accountId == null || x.Id == accountId))
+            .Where(x => x.TenantId == tenantId
+                && (accountId == null || x.Id == accountId)
+                && (accountId != null || (x.AccountType != "HomeLoan" && x.AccountType != "Offset" && x.AccountType != "Other")))
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
 
@@ -409,6 +422,15 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         if (query.AccountId is { } accountId)
         {
             transactions = transactions.Where(x => x.BankAccountId == accountId);
+        }
+        else
+        {
+            var everydayAccountIds = await dbContext.BankAccounts
+                .AsNoTracking()
+                .Where(x => x.TenantId == tenantId && x.AccountType != "HomeLoan" && x.AccountType != "Offset" && x.AccountType != "Other")
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+            transactions = transactions.Where(x => everydayAccountIds.Contains(x.BankAccountId));
         }
 
         if (query.From is { } from)
@@ -1958,6 +1980,24 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return accountId is not null && (includeInternalTransfers ?? true);
     }
 
+    private static string CleanAccountType(string? accountType)
+    {
+        return accountType?.Trim() switch
+        {
+            "Savings" => "Savings",
+            "CreditCard" => "CreditCard",
+            "HomeLoan" => "HomeLoan",
+            "Offset" => "Offset",
+            "Other" => "Other",
+            _ => "Everyday"
+        };
+    }
+
+    private static bool IsEverydayAnalyticsAccount(string accountType)
+    {
+        return accountType is not "HomeLoan" and not "Offset" and not "Other";
+    }
+
     private static string GetOverviewMetricScopeKey(Guid? accountId, bool includeInternalTransfers)
     {
         if (accountId is null)
@@ -2063,7 +2103,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
     private sealed record AccountDisplay(string Name, string CustomName, string AccountNumber);
 
-    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string CustomName, string AccountNumber, string Currency);
+    private sealed record AccountRow(Guid Id, Guid BankConnectionId, string Name, string CustomName, string AccountType, string AccountNumber, string Currency);
 
     private sealed record TransactionRow(
         Guid Id,

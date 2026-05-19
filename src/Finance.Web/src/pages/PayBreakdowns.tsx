@@ -41,6 +41,8 @@ export function PayBreakdowns() {
   })
   const canCreateMore = (profiles.data?.length ?? 0) < 2
   const isEditing = !!form.id
+  const everydayAccounts = useMemo(() => (accounts.data ?? []).filter(x => x.includeInEverydayAnalytics), [accounts.data])
+  const savingsAccounts = useMemo(() => (accounts.data ?? []).filter(x => x.accountType === 'Savings'), [accounts.data])
   const selectedMainAccount = useMemo(() => accounts.data?.find(x => x.id === form.mainAccountId), [accounts.data, form.mainAccountId])
   const saveProfile = useMutation({
     mutationFn: () => {
@@ -120,7 +122,7 @@ export function PayBreakdowns() {
                 value={form.mainAccountId}
               >
                 <option value="">Main account</option>
-                {(accounts.data ?? []).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+                {everydayAccounts.map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
               </select>
               <select
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
@@ -128,7 +130,7 @@ export function PayBreakdowns() {
                 value={form.savingsAccountId}
               >
                 <option value="">No savings account</option>
-                {(accounts.data ?? []).filter(x => x.id !== form.mainAccountId).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+                {savingsAccounts.filter(x => x.id !== form.mainAccountId).map(x => <option key={x.id} value={x.id}>{x.displayName}</option>)}
               </select>
               <input
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"

@@ -8,7 +8,7 @@ export function AccountsList({
   isLoading,
   isSaving,
   isOperating,
-  onRename,
+  onUpdate,
   onSync,
   onClear
 }: {
@@ -16,25 +16,28 @@ export function AccountsList({
   isLoading: boolean
   isSaving: boolean
   isOperating: boolean
-  onRename: (accountId: string, customName: string) => void
+  onUpdate: (accountId: string, customName: string, accountType: Account['accountType']) => void
   onSync: (accountId: string) => void
   onClear: (accountId: string, displayName: string) => void
 }) {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
   const [customName, setCustomName] = useState('')
+  const [accountType, setAccountType] = useState<Account['accountType']>('Everyday')
 
   function startEditing(account: Account) {
     setEditingAccountId(account.id)
     setCustomName(account.customName)
+    setAccountType(account.accountType)
   }
 
   function stopEditing() {
     setEditingAccountId(null)
     setCustomName('')
+    setAccountType('Everyday')
   }
 
   function saveName(accountId: string) {
-    onRename(accountId, customName)
+    onUpdate(accountId, customName, accountType)
     stopEditing()
   }
 
@@ -62,6 +65,13 @@ export function AccountsList({
                   placeholder={account.name}
                   value={customName}
                 />
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+                  onChange={x => setAccountType(x.target.value as Account['accountType'])}
+                  value={accountType}
+                >
+                  {accountTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+                </select>
                 <button aria-label={`Save custom name for ${account.displayName}`} className="inline-flex size-9 items-center justify-center rounded-md border border-input hover:bg-muted disabled:opacity-50" disabled={isSaving} onClick={() => saveName(account.id)} type="button">
                   <Check className="size-4" />
                 </button>
@@ -73,7 +83,10 @@ export function AccountsList({
               <div className="mt-1 flex min-w-0 items-center gap-2">
                 <div className="min-w-0">
                   <p className="break-words text-base font-medium leading-snug">{account.displayName}</p>
-                  {account.customName && <p className="mt-1 text-xs text-muted-foreground">{account.name}</p>}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {account.customName ? `${account.name} - ` : ''}{formatAccountType(account.accountType)}
+                    {!account.includeInEverydayAnalytics ? ' - excluded from everyday analytics' : ''}
+                  </p>
                 </div>
                 <button aria-label={`Edit custom name for ${account.displayName}`} className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground" onClick={() => startEditing(account)} type="button">
                   <Pencil className="size-4" />
@@ -95,4 +108,17 @@ export function AccountsList({
       {!isLoading && accounts.length === 0 && <p className="text-sm text-muted-foreground">No accounts imported yet.</p>}
     </div>
   )
+}
+
+const accountTypes: Array<{ value: Account['accountType']; label: string }> = [
+  { value: 'Everyday', label: 'Everyday' },
+  { value: 'Savings', label: 'Savings' },
+  { value: 'CreditCard', label: 'Credit card' },
+  { value: 'HomeLoan', label: 'Home loan' },
+  { value: 'Offset', label: 'Offset' },
+  { value: 'Other', label: 'Other' }
+]
+
+function formatAccountType(accountType: Account['accountType']) {
+  return accountTypes.find(x => x.value === accountType)?.label ?? accountType
 }

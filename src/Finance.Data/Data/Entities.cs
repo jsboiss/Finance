@@ -60,6 +60,7 @@ public sealed class BankAccount
     public string ExternalAccountId { get; set; } = "";
     public string Name { get; set; } = "";
     public string CustomName { get; set; } = "";
+    public string AccountType { get; set; } = "Everyday";
     public string AccountNumber { get; set; } = "";
     public string Currency { get; set; } = "AUD";
     public JsonDocument RawJson { get; set; } = JsonDocument.Parse("{}");

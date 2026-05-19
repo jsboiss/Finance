@@ -11,10 +11,10 @@ export function Accounts() {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const imports = useQuery({ queryKey: ['imports'], queryFn: () => api<ImportRun[]>('/api/imports'), refetchInterval: x => hasRunningImport(x.state.data) ? 3000 : false })
   const updateAccount = useMutation({
-    mutationFn: ({ accountId, customName }: { accountId: string; customName: string }) => api<Account>(`/api/accounts/${accountId}`, {
+    mutationFn: ({ accountId, customName, accountType }: { accountId: string; customName: string; accountType: Account['accountType'] }) => api<Account>(`/api/accounts/${accountId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customName })
+      body: JSON.stringify({ customName, accountType })
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
@@ -81,7 +81,7 @@ export function Accounts() {
         isOperating={isOperating}
         isSaving={updateAccount.isPending}
         onClear={onClearAccount}
-        onRename={(accountId, customName) => updateAccount.mutate({ accountId, customName })}
+        onUpdate={(accountId, customName, accountType) => updateAccount.mutate({ accountId, customName, accountType })}
         onSync={accountId => syncAccount.mutate(accountId)}
       />
     </section>

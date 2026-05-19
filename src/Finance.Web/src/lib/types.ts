@@ -2,12 +2,16 @@ export type Account = {
   id: string
   name: string
   customName: string
+  accountType: AccountType
+  includeInEverydayAnalytics: boolean
   accountNumber: string
   displayName: string
   institutionName: string
   currency: string
   currentBalanceMinorUnits: number | null
 }
+
+export type AccountType = 'Everyday' | 'Savings' | 'CreditCard' | 'HomeLoan' | 'Offset' | 'Other'
 
 export type Balance = {
   accountId: string

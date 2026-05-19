@@ -39,7 +39,11 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             x.HasIndex(y => new { y.TenantId, y.ExternalConnectionId }).IsUnique();
         });
         modelBuilder.Entity<BankConnection>(x => x.HasIndex(y => new { y.TenantId, y.ExternalConnectionId }).IsUnique());
-        modelBuilder.Entity<BankAccount>(x => x.HasIndex(y => new { y.TenantId, y.ExternalAccountId }).IsUnique());
+        modelBuilder.Entity<BankAccount>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.ExternalAccountId }).IsUnique();
+            x.Property(y => y.AccountType).HasDefaultValue("Everyday");
+        });
         modelBuilder.Entity<Balance>(x => x.HasIndex(y => new { y.TenantId, y.BankAccountId, y.AsOf }).IsUnique());
         modelBuilder.Entity<BankTransaction>(x =>
         {

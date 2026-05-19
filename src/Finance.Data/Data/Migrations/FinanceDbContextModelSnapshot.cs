@@ -120,6 +120,12 @@ namespace Finance.Data.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("AccountType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Everyday");
+
                     b.Property<Guid>("BankConnectionId")
                         .HasColumnType("uuid");
 
