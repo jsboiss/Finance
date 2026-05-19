@@ -400,8 +400,7 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
 function SavingsHoverPoint({ currencyCode, point, showMarker }: { currencyCode: string; point: SavingsChartPoint; showMarker: boolean }) {
   return (
     <div className={showMarker ? 'group absolute z-30 h-10 w-10 -translate-x-1/2 -translate-y-1/2' : 'group absolute z-20 h-10 w-10 -translate-x-1/2 -translate-y-1/2'} style={{ left: `${(point.left / 720) * 100}%`, top: `${(point.top / 260) * 100}%` }}>
-      {showMarker && <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm" />}
-      {!showMarker && <div className="h-full w-full rounded-full" />}
+      <div className={showMarker ? 'h-full w-full rounded-full' : 'h-full w-full rounded-full'} />
       <div className={`pointer-events-none absolute top-1/2 z-50 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${point.tooltipPosition}`}>
         <p className="font-medium">{formatDailyCashFlowDate(point.key)}</p>
         <p className="mt-1 font-semibold">{currency(point.balanceMinorUnits, currencyCode)}</p>
