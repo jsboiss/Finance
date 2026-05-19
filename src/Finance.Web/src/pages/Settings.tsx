@@ -85,6 +85,7 @@ export function Settings() {
   })
 
   const isTenantOperationRunning = assignConnection.isPending || discoverAccounts.isPending || backfill.isPending || reconcile.isPending || clearTenantData.isPending
+  const selectedTenant = (tenants.data ?? []).find(x => x.id === selectedTenantId)
 
   async function copyKey() {
     if (!newApiKey) {
@@ -173,13 +174,28 @@ export function Settings() {
         {createTenant.error && <p className="text-sm text-destructive">Could not create tenant. Check that the API is running with the latest build and that the tenant name is unique.</p>}
         <div className="grid gap-2">
           {(tenants.data ?? []).map(x => (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2" key={x.id}>
+            <button
+              className={`flex min-h-14 w-full flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/60 ${
+                selectedTenantId === x.id ? 'border-primary bg-primary/10' : 'border-border'
+              }`}
+              key={x.id}
+              onClick={() => setSelectedTenantId(x.id)}
+              type="button"
+            >
               <div>
-                <p className="text-sm font-medium">{x.name}</p>
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  {x.name}
+                  {selectedTenantId === x.id && (
+                    <Badge variant="secondary">
+                      <Check className="size-3" />
+                      Selected
+                    </Badge>
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground">{x.id}</p>
               </div>
               <p className="text-xs text-muted-foreground">Created {new Date(x.createdAt).toLocaleString()}</p>
-            </div>
+            </button>
           ))}
           {!tenants.isLoading && tenants.data?.length === 0 && <p className="text-sm text-muted-foreground">No tenants yet.</p>}
         </div>
@@ -189,7 +205,26 @@ export function Settings() {
           <DatabaseZap className="size-4 text-primary" />
           <h2 className="text-sm font-semibold">Tenant Redbark setup</h2>
         </div>
-        {!selectedTenantId && <p className="text-sm text-muted-foreground">Select a tenant above to assign Redbark connections and run tenant-scoped imports.</p>}
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            onChange={x => setSelectedTenantId(x.target.value)}
+            value={selectedTenantId}
+          >
+            <option value="">Select tenant for Redbark setup</option>
+            {(tenants.data ?? []).map(x => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+          {selectedTenant && (
+            <Badge className="h-9 justify-center px-3" variant="secondary">
+              Assigning to {selectedTenant.name}
+            </Badge>
+          )}
+        </div>
+        {!selectedTenantId && <p className="text-sm text-muted-foreground">Select the tenant that owns this bank connection.</p>}
         {selectedTenantId && (
           <>
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -208,7 +243,7 @@ export function Settings() {
               </select>
               <Button disabled={assignConnection.isPending || !selectedConnectionId} onClick={() => assignConnection.mutate()} variant="outline">
                 <Plus data-icon="inline-start" />
-                Assign connection
+                Assign to {selectedTenant?.name ?? 'tenant'}
               </Button>
             </div>
             {assignConnection.error && <p className="text-sm text-destructive">Could not assign that Redbark connection. It may already be assigned to another tenant.</p>}
