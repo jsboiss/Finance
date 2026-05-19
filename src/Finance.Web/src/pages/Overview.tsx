@@ -319,7 +319,7 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
   const projectionPoints = projection.map((x, index) => toTrajectoryChartPoint(x, actual.length + index, totalPoints, width, height, padding, min, range))
   const lowerBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.lowerBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0, withdrawalMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
   const upperBandPoints = bandPoints.map((x, index) => toTrajectoryChartPoint({ key: x.key, balanceMinorUnits: x.upperBalanceMinorUnits, depositMinorUnits: 0, interestMinorUnits: 0, withdrawalMinorUnits: 0 }, actual.length + index, totalPoints, width, height, padding, min, range))
-  const actualPath = toSmoothPath(actualPoints)
+  const actualPath = toStepPath(actualPoints)
   const projectionStart = actualPoints.at(-1)
   const projectionPath = toSmoothPath(projectionStart ? [projectionStart, ...projectionPoints] : projectionPoints)
   const bandPath = projectionStart && lowerBandPoints.length > 0 && upperBandPoints.length > 0
@@ -399,19 +399,17 @@ function SavingsTrajectoryChart({ trajectory, isLoading }: { trajectory?: Saving
 
 function SavingsHoverPoint({ currencyCode, point, showMarker }: { currencyCode: string; point: SavingsChartPoint; showMarker: boolean }) {
   return (
-    <div className={showMarker ? 'group pointer-events-none absolute z-30 h-9 w-9 -translate-x-1/2 -translate-y-1/2' : 'group absolute z-20 h-10 w-10 -translate-x-1/2 -translate-y-1/2'} style={{ left: `${(point.left / 720) * 100}%`, top: `${(point.top / 260) * 100}%` }}>
+    <div className={showMarker ? 'group absolute z-30 h-10 w-10 -translate-x-1/2 -translate-y-1/2' : 'group absolute z-20 h-10 w-10 -translate-x-1/2 -translate-y-1/2'} style={{ left: `${(point.left / 720) * 100}%`, top: `${(point.top / 260) * 100}%` }}>
       {showMarker && <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary shadow-sm" />}
       {!showMarker && <div className="h-full w-full rounded-full" />}
-      {!showMarker && (
-        <div className={`pointer-events-none absolute top-1/2 z-30 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${point.tooltipPosition}`}>
-          <p className="font-medium">{formatDailyCashFlowDate(point.key)}</p>
-          <p className="mt-1 font-semibold">{currency(point.balanceMinorUnits, currencyCode)}</p>
-          {point.depositMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Deposit {currency(point.depositMinorUnits, currencyCode)}</p>}
-          {point.interestMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Interest {currency(point.interestMinorUnits, currencyCode)}</p>}
-          {point.withdrawalMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Withdrawal {currency(point.withdrawalMinorUnits, currencyCode)}</p>}
-          {point.depositMinorUnits === 0 && point.interestMinorUnits === 0 && point.withdrawalMinorUnits === 0 && <p className="mt-1 text-muted-foreground">No movement</p>}
-        </div>
-      )}
+      <div className={`pointer-events-none absolute top-1/2 z-50 hidden min-w-48 -translate-y-1/2 rounded-md border border-border bg-popover px-3 py-2 text-left text-xs text-popover-foreground shadow-lg group-hover:block ${point.tooltipPosition}`}>
+        <p className="font-medium">{formatDailyCashFlowDate(point.key)}</p>
+        <p className="mt-1 font-semibold">{currency(point.balanceMinorUnits, currencyCode)}</p>
+        {point.depositMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Deposit {currency(point.depositMinorUnits, currencyCode)}</p>}
+        {point.interestMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Interest {currency(point.interestMinorUnits, currencyCode)}</p>}
+        {point.withdrawalMinorUnits > 0 && <p className="mt-1 text-muted-foreground">Withdrawal {currency(point.withdrawalMinorUnits, currencyCode)}</p>}
+        {point.depositMinorUnits === 0 && point.interestMinorUnits === 0 && point.withdrawalMinorUnits === 0 && <p className="mt-1 text-muted-foreground">No movement</p>}
+      </div>
     </div>
   )
 }
@@ -470,6 +468,21 @@ function toSmoothPath(points: { left: number; top: number }[]) {
     const previous = points[index - 1]
     const controlX = (previous.left + point.left) / 2
     return `${path} C ${controlX} ${previous.top}, ${controlX} ${point.top}, ${point.left} ${point.top}`
+  }, '')
+}
+
+function toStepPath(points: { left: number; top: number }[]) {
+  if (points.length <= 1) {
+    return points.length === 1 ? `M ${points[0].left} ${points[0].top}` : ''
+  }
+
+  return points.reduce((path, point, index) => {
+    if (index === 0) {
+      return `M ${point.left} ${point.top}`
+    }
+
+    const previous = points[index - 1]
+    return `${path} L ${point.left} ${previous.top} L ${point.left} ${point.top}`
   }, '')
 }
 
