@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Finance.Data.Data.Migrations
 {
     /// <inheritdoc />
+    [Migration("20260519110000_AccountTypes")]
     public partial class AccountTypes : Migration
     {
         /// <inheritdoc />
