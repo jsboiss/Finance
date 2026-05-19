@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, DatabaseZap, RefreshCcw, RotateCcw, Trash2 } from 'lucide-react'
 import { Header } from '../components/Header'
+import { ListLoading, MetricGridLoading } from '../components/LoadingSkeletons'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
@@ -38,12 +39,16 @@ export function Imports() {
   return (
     <section className="space-y-6">
       <Header title="Imports" subtitle="Backfill, webhook, and reconciliation run status." />
-      <div className="grid gap-3 md:grid-cols-4">
-        <RequestMetric label="Today" value={status.data?.redbarkRequestsToday} />
-        <RequestMetric label="This month" value={status.data?.redbarkRequestsThisMonth} />
-        <RequestMetric label="Total" value={status.data?.redbarkRequestsTotal} />
-        <RequestMetric label="Last request" value={status.data?.lastRedbarkRequestAt ? new Date(status.data.lastRedbarkRequestAt).toLocaleString() : 'Never'} />
-      </div>
+      {status.isLoading ? (
+        <MetricGridLoading />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-4">
+          <RequestMetric label="Today" value={status.data?.redbarkRequestsToday} />
+          <RequestMetric label="This month" value={status.data?.redbarkRequestsThisMonth} />
+          <RequestMetric label="Total" value={status.data?.redbarkRequestsTotal} />
+          <RequestMetric label="Last request" value={status.data?.lastRedbarkRequestAt ? new Date(status.data.lastRedbarkRequestAt).toLocaleString() : 'Never'} />
+        </div>
+      )}
       {(activeOperation || imports.data?.some(x => x.status === 'running')) && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
           <Activity className="size-4 animate-pulse text-foreground" />
@@ -75,22 +80,26 @@ export function Imports() {
       {(discoverAccounts.error || backfill.error || reconcile.error || reconcileFull.error || clearData.error) && (
         <p className="text-sm text-destructive">Operation failed. Check the API logs for the Redbark error details.</p>
       )}
-      <div className="grid gap-3">
-        {(imports.data ?? []).map(x => (
-          <Card className="p-4" key={x.id}>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium">{x.source}</p>
-                <p className="text-sm text-muted-foreground">{new Date(x.startedAt).toLocaleString()}</p>
+      {imports.isLoading ? (
+        <ListLoading count={3} />
+      ) : (
+        <div className="grid gap-3">
+          {(imports.data ?? []).map(x => (
+            <Card className="p-4" key={x.id}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium">{x.source}</p>
+                  <p className="text-sm text-muted-foreground">{new Date(x.startedAt).toLocaleString()}</p>
+                </div>
+              <Badge variant={x.status === 'failed' ? 'destructive' : 'secondary'}>{x.status}</Badge>
               </div>
-            <Badge variant={x.status === 'failed' ? 'destructive' : 'secondary'}>{x.status}</Badge>
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">{x.importedCount} transactions imported</p>
-            {x.error && <p className="mt-3 text-sm text-destructive">{x.error}</p>}
-          </Card>
-        ))}
-        {!imports.isLoading && imports.data?.length === 0 && <p className="text-sm text-muted-foreground">No import runs yet.</p>}
-      </div>
+              <p className="mt-3 text-sm text-muted-foreground">{x.importedCount} transactions imported</p>
+              {x.error && <p className="mt-3 text-sm text-destructive">{x.error}</p>}
+            </Card>
+          ))}
+          {imports.data?.length === 0 && <p className="text-sm text-muted-foreground">No import runs yet.</p>}
+        </div>
+      )}
     </section>
   )
 }

@@ -1,14 +1,16 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { lazy } from 'react'
 import { Shell } from './layout/Shell'
-import { Accounts } from './pages/Accounts'
-import { Budgets } from './pages/Budgets'
-import { Imports } from './pages/Imports'
-import { HomeLoans } from './pages/HomeLoans'
-import { Overview } from './pages/Overview'
-import { PayBreakdowns } from './pages/PayBreakdowns'
-import { Settings } from './pages/Settings'
-import { Subscriptions } from './pages/Subscriptions'
-import { Transactions } from './pages/Transactions'
+
+const Overview = lazy(() => import('./pages/Overview').then(x => ({ default: x.Overview })))
+const Accounts = lazy(() => import('./pages/Accounts').then(x => ({ default: x.Accounts })))
+const Transactions = lazy(() => import('./pages/Transactions').then(x => ({ default: x.Transactions })))
+const Budgets = lazy(() => import('./pages/Budgets').then(x => ({ default: x.Budgets })))
+const PayBreakdowns = lazy(() => import('./pages/PayBreakdowns').then(x => ({ default: x.PayBreakdowns })))
+const HomeLoans = lazy(() => import('./pages/HomeLoans').then(x => ({ default: x.HomeLoans })))
+const Subscriptions = lazy(() => import('./pages/Subscriptions').then(x => ({ default: x.Subscriptions })))
+const Imports = lazy(() => import('./pages/Imports').then(x => ({ default: x.Imports })))
+const Settings = lazy(() => import('./pages/Settings').then(x => ({ default: x.Settings })))
 
 const rootRoute = createRootRoute({ component: Shell })
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: Overview })

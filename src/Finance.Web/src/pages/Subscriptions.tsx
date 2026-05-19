@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, ChevronRight, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { Header } from '../components/Header'
+import { MetricGridLoading, TableLoading } from '../components/LoadingSkeletons'
 import { Metric } from '../components/Metric'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -45,7 +46,11 @@ export function Subscriptions() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const queryClient = useQueryClient()
   const subscriptions = useQuery({ queryKey: ['subscriptions'], queryFn: () => api<Subscription[]>('/api/subscriptions') })
-  const suggestions = useQuery({ queryKey: ['subscription-suggestions'], queryFn: () => api<SubscriptionSuggestion[]>('/api/subscription-suggestions') })
+  const suggestions = useQuery({
+    enabled: showSuggestions,
+    queryKey: ['subscription-suggestions'],
+    queryFn: () => api<SubscriptionSuggestion[]>('/api/subscription-suggestions')
+  })
   const detail = useQuery({
     enabled: selectedSubscriptionId != null,
     queryKey: ['subscription', selectedSubscriptionId],
@@ -105,14 +110,21 @@ export function Subscriptions() {
   return (
     <section className="space-y-6">
       <Header title="Subscriptions" subtitle="Track recurring payments, review detected subscriptions, and watch for price increases." />
-      <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Active" value={`${activeSubscriptions.length}`} />
-        <Metric label="Monthly estimate" value={currency(monthlyEstimate, 'AUD')} />
-        <Metric label="Yearly estimate" value={currency(yearlyEstimate, 'AUD')} />
-        <Metric label="Pending suggestions" value={`${suggestions.data?.length ?? 0}`} />
-      </div>
+      {subscriptions.isLoading ? (
+        <MetricGridLoading />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-4">
+          <Metric label="Active" value={`${activeSubscriptions.length}`} />
+          <Metric label="Monthly estimate" value={currency(monthlyEstimate, 'AUD')} />
+          <Metric label="Yearly estimate" value={currency(yearlyEstimate, 'AUD')} />
+          <Metric label="Pending suggestions" value={suggestions.data ? `${suggestions.data.length}` : '-'} />
+        </div>
+      )}
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
+          {subscriptions.isLoading ? (
+            <TableLoading columns={7} />
+          ) : (
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             <Table>
               <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
@@ -145,11 +157,12 @@ export function Subscriptions() {
               </TableBody>
             </Table>
           </div>
+          )}
           <Card className="space-y-4 p-4">
             <div className="flex items-center justify-between gap-3">
               <button className="inline-flex items-center gap-2 text-sm font-semibold" onClick={() => setShowSuggestions(x => !x)} type="button">
                 {showSuggestions ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                Suggested subscriptions ({suggestions.data?.length ?? 0})
+                Suggested subscriptions ({suggestions.data?.length ?? '-'})
               </button>
               <Button disabled={refreshSuggestions.isPending} onClick={() => refreshSuggestions.mutate()} size="sm" variant="outline">
                 <RefreshCw data-icon="inline-start" />
@@ -182,6 +195,7 @@ export function Subscriptions() {
                     </div>
                   </div>
                 ))}
+                {suggestions.isLoading && <SuggestionListLoading />}
                 {!suggestions.isLoading && sortedSuggestions.length === 0 && <p className="text-sm text-muted-foreground">No pending suggestions.</p>}
               </div>
             )}
@@ -241,7 +255,7 @@ export function Subscriptions() {
                     </section>
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Loading subscription history...</p>
+                  <SubscriptionDetailLoading />
                 )}
               </div>
               <div className="min-w-0 space-y-3 overflow-y-visible border-t border-border p-5 lg:border-l lg:border-t-0">
@@ -277,6 +291,40 @@ export function Subscriptions() {
     setEditingSubscriptionId(null)
     setForm(emptyForm)
   }
+}
+
+function SuggestionListLoading() {
+  return (
+    <>
+      {[0, 1, 2].map(x => (
+        <div className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1fr_auto]" key={x}>
+          <div>
+            <div className="h-5 w-40 animate-pulse rounded bg-muted" />
+            <div className="mt-3 h-4 w-72 max-w-full animate-pulse rounded bg-muted" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-20 animate-pulse rounded bg-muted" />
+            <div className="h-8 w-20 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function SubscriptionDetailLoading() {
+  return (
+    <>
+      {[0, 1].map(x => (
+        <section className="min-w-0 rounded-md border border-border bg-background p-3" key={x}>
+          <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+          <div className="mt-3 space-y-2">
+            {[0, 1, 2].map(y => <div className="h-9 animate-pulse rounded-md bg-muted" key={y} />)}
+          </div>
+        </section>
+      ))}
+    </>
+  )
 }
 
 function SubscriptionFormFields({ form, onChange }: { form: SubscriptionForm; onChange: (form: SubscriptionForm) => void }) {

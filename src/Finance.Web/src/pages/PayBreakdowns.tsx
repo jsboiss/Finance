@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { ChevronDown, Edit3, Plus, Trash2, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Header } from '../components/Header'
+import { CardGridLoading } from '../components/LoadingSkeletons'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -159,7 +160,7 @@ export function PayBreakdowns() {
           </div>
         </Card>
       )}
-      {profiles.isLoading && <PayBreakdownLoading />}
+      {profiles.isLoading && <CardGridLoading />}
       {!profiles.isLoading && (
         <div className={profiles.isFetching ? 'grid gap-4 opacity-70 transition-opacity xl:grid-cols-2' : 'grid gap-4 transition-opacity xl:grid-cols-2'}>
           {(profiles.data ?? []).map(x => <PayBreakdownCard key={x.id} profile={x} onDelete={removeProfile} onEdit={editProfile} />)}
@@ -173,34 +174,6 @@ export function PayBreakdowns() {
         </Card>
       )}
     </section>
-  )
-}
-
-function PayBreakdownLoading() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      {[0, 1].map(x => (
-        <Card key={x}>
-          <CardHeader>
-            <div className="h-5 w-40 animate-pulse rounded bg-muted" />
-            <div className="mt-2 h-4 w-56 animate-pulse rounded bg-muted" />
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {[0, 1, 2].map(y => <div className="h-20 animate-pulse rounded-md bg-muted" key={y} />)}
-            </div>
-            <div className="space-y-3">
-              {[0, 1, 2].map(y => (
-                <div className="rounded-md border border-border p-3" key={y}>
-                  <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
-                  <div className="mt-3 h-2 animate-pulse rounded bg-muted" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
   )
 }
 

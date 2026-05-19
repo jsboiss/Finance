@@ -5,7 +5,15 @@ import { RouterProvider } from '@tanstack/react-router'
 import { router } from './routes'
 import './index.css'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 15 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      staleTime: 60 * 1000
+    }
+  }
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { BanknoteArrowDown, Landmark, PiggyBank } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Header } from '../components/Header'
+import { MetricGridLoading } from '../components/LoadingSkeletons'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { api } from '../lib/api'
 import { currency } from '../lib/format'
@@ -30,11 +31,15 @@ export function HomeLoans() {
     <section className="space-y-6">
       <Header title="Home loans" subtitle="Loan and offset accounts are tracked separately from everyday cashflow." />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <SummaryMetric icon={<Landmark className="size-5" />} label="Loan balance" value={loanDebtMinorUnits} currencyCode={currencyCode} />
-        <SummaryMetric icon={<PiggyBank className="size-5" />} label="Offset balance" value={offsetBalanceMinorUnits} currencyCode={currencyCode} />
-        <SummaryMetric icon={<BanknoteArrowDown className="size-5" />} label="Net loan exposure" value={netDebtMinorUnits} currencyCode={currencyCode} />
-      </div>
+      {accounts.isLoading ? (
+        <MetricGridLoading count={3} />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-3">
+          <SummaryMetric icon={<Landmark className="size-5" />} label="Loan balance" value={loanDebtMinorUnits} currencyCode={currencyCode} />
+          <SummaryMetric icon={<PiggyBank className="size-5" />} label="Offset balance" value={offsetBalanceMinorUnits} currencyCode={currencyCode} />
+          <SummaryMetric icon={<BanknoteArrowDown className="size-5" />} label="Net loan exposure" value={netDebtMinorUnits} currencyCode={currencyCode} />
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -43,6 +48,7 @@ export function HomeLoans() {
             <CardDescription>Set account types on the Accounts page to control what appears here.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {accounts.isLoading && <InlineListLoading />}
             {trackedAccounts.map(x => (
               <div className="grid gap-1 rounded-md border border-border p-3" key={x.id}>
                 <div className="flex items-center justify-between gap-3">
@@ -68,6 +74,7 @@ export function HomeLoans() {
           </CardHeader>
           <CardContent>
             <div className="overflow-hidden rounded-md border border-border">
+              {transactions.isLoading && <InlineListLoading />}
               {(transactions.data ?? []).map(x => (
                 <div className="grid gap-1 border-b border-border px-3 py-2 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center" key={x.id}>
                   <div className="min-w-0">
@@ -87,6 +94,22 @@ export function HomeLoans() {
         </Card>
       </div>
     </section>
+  )
+}
+
+function InlineListLoading() {
+  return (
+    <>
+      {[0, 1, 2].map(x => (
+        <div className="grid gap-1 border-b border-border px-3 py-2 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center" key={x}>
+          <div>
+            <div className="h-4 w-48 max-w-full animate-pulse rounded bg-muted" />
+            <div className="mt-2 h-3 w-36 max-w-full animate-pulse rounded bg-muted" />
+          </div>
+          <div className="h-5 w-24 animate-pulse rounded bg-muted sm:justify-self-end" />
+        </div>
+      ))}
+    </>
   )
 }
 

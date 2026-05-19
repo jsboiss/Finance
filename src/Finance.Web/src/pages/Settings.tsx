@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Building2, Check, Copy, DatabaseZap, KeyRound, Plus, RefreshCcw, ShieldOff, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Header } from '../components/Header'
+import { ListLoading } from '../components/LoadingSkeletons'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
@@ -167,6 +168,9 @@ export function Settings() {
           </Button>
         </div>
         {createTenant.error && <p className="text-sm text-destructive">Could not create tenant. Check that the API is running with the latest build and that the tenant name is unique.</p>}
+        {tenants.isLoading ? (
+          <ListLoading count={3} />
+        ) : (
         <div className="grid gap-2">
           {(tenants.data ?? []).map(x => (
             <button
@@ -192,8 +196,9 @@ export function Settings() {
               <p className="text-xs text-muted-foreground">Created {new Date(x.createdAt).toLocaleString()}</p>
             </button>
           ))}
-          {!tenants.isLoading && tenants.data?.length === 0 && <p className="text-sm text-muted-foreground">No tenants yet.</p>}
+          {tenants.data?.length === 0 && <p className="text-sm text-muted-foreground">No tenants yet.</p>}
         </div>
+        )}
       </Card>
       <Card className="space-y-4 p-4">
         <div className="flex items-center gap-2">
@@ -243,6 +248,7 @@ export function Settings() {
             </div>
             {assignConnection.error && <p className="text-sm text-destructive">Could not assign that Redbark connection. It may already be assigned to another tenant.</p>}
             <div className="grid gap-2">
+              {tenantConnections.isLoading && <TenantSetupLoading />}
               {(tenantConnections.data?.assigned ?? []).map(x => (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2" key={x.externalConnectionId}>
                   <div>
@@ -283,6 +289,7 @@ export function Settings() {
             )}
             <div className="grid gap-2">
               <p className="text-xs font-semibold uppercase text-muted-foreground">Latest tenant imports</p>
+              {tenantImports.isLoading && <TenantSetupLoading />}
               {(tenantImports.data ?? []).map(x => (
                 <div className="rounded-md border border-border px-3 py-2" key={x.id}>
                   <div className="flex items-center justify-between gap-3">
@@ -298,6 +305,9 @@ export function Settings() {
           </>
         )}
       </Card>
+      {apiClients.isLoading ? (
+        <ListLoading count={3} />
+      ) : (
       <div className="grid gap-3">
         {(apiClients.data ?? []).map(x => (
           <Card className="p-4" key={x.id}>
@@ -321,9 +331,23 @@ export function Settings() {
             {x.revokedAt && <p className="mt-3 text-sm text-muted-foreground">Revoked {new Date(x.revokedAt).toLocaleString()}</p>}
           </Card>
         ))}
-        {!apiClients.isLoading && apiClients.data?.length === 0 && <p className="text-sm text-muted-foreground">No API clients yet.</p>}
+        {apiClients.data?.length === 0 && <p className="text-sm text-muted-foreground">No API clients yet.</p>}
       </div>
+      )}
     </section>
+  )
+}
+
+function TenantSetupLoading() {
+  return (
+    <>
+      {[0, 1].map(x => (
+        <div className="rounded-md border border-border px-3 py-2" key={x}>
+          <div className="h-4 w-44 max-w-full animate-pulse rounded bg-muted" />
+          <div className="mt-2 h-3 w-64 max-w-full animate-pulse rounded bg-muted" />
+        </div>
+      ))}
+    </>
   )
 }
 

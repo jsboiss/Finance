@@ -1,5 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
 import { Activity, Banknote, CircleDollarSign, Landmark, ReceiptText, RefreshCcw, Search, Settings as SettingsIcon, Target, WalletCards } from 'lucide-react'
+import { Suspense } from 'react'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { NavLink } from './NavLink'
 
@@ -48,9 +49,26 @@ export function Shell() {
       </header>
       <main className="lg:pl-64">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <Outlet />
+          <Suspense fallback={<RouteLoading />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
+    </div>
+  )
+}
+
+function RouteLoading() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="h-7 w-40 animate-pulse rounded bg-muted" />
+        <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-muted" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {[0, 1, 2].map(x => <div className="h-24 animate-pulse rounded-lg border border-border bg-muted" key={x} />)}
+      </div>
+      <div className="h-64 animate-pulse rounded-lg border border-border bg-muted" />
     </div>
   )
 }

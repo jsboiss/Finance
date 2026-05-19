@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Edit3, Plus, Target, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Header } from '../components/Header'
+import { CardGridLoading } from '../components/LoadingSkeletons'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
@@ -139,19 +140,22 @@ export function Budgets() {
           {saveBudget.error && <p className="text-sm text-destructive">Could not save this budget. Check that the name is unique.</p>}
         </CardContent>
       </Card>
-      {budgets.isLoading && <Card className="h-48 animate-pulse bg-muted" />}
-      <div className={budgets.isFetching ? 'grid gap-4 opacity-70 transition-opacity xl:grid-cols-2' : 'grid gap-4 transition-opacity xl:grid-cols-2'}>
-        {(budgets.data ?? []).map(x => (
-          <BudgetCard
-            budget={x}
-            isHistoryOpen={expandedProfileId === x.id}
-            key={x.id}
-            onDelete={removeBudget}
-            onEdit={editBudget}
-            onToggleHistory={() => setExpandedProfileId(y => y === x.id ? null : x.id)}
-          />
-        ))}
-      </div>
+      {budgets.isLoading ? (
+        <CardGridLoading />
+      ) : (
+        <div className={budgets.isFetching ? 'grid gap-4 opacity-70 transition-opacity xl:grid-cols-2' : 'grid gap-4 transition-opacity xl:grid-cols-2'}>
+          {(budgets.data ?? []).map(x => (
+            <BudgetCard
+              budget={x}
+              isHistoryOpen={expandedProfileId === x.id}
+              key={x.id}
+              onDelete={removeBudget}
+              onEdit={editBudget}
+              onToggleHistory={() => setExpandedProfileId(y => y === x.id ? null : x.id)}
+            />
+          ))}
+        </div>
+      )}
       {!budgets.isLoading && budgets.data?.length === 0 && (
         <Card className="p-8 text-center">
           <Target className="mx-auto size-8 text-muted-foreground" />

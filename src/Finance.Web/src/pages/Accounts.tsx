@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, DatabaseZap, Loader2 } from 'lucide-react'
 import { AccountsList } from '../components/AccountsList'
 import { Header } from '../components/Header'
+import { ListLoading } from '../components/LoadingSkeletons'
 import { Button } from '../components/ui/button'
 import { api } from '../lib/api'
 import type { Account, ImportRun } from '../lib/types'
@@ -80,15 +81,19 @@ export function Accounts() {
       {(discoverAccounts.error || syncAccount.error || clearAccount.error) && (
         <p className="text-sm text-destructive">Operation failed. Check the latest import card or Railway logs for details.</p>
       )}
-      <AccountsList
-        accounts={accounts.data ?? []}
-        isLoading={accounts.isLoading}
-        isOperating={isOperating}
-        isSaving={updateAccount.isPending}
-        onClear={onClearAccount}
-        onUpdate={(accountId, customName, accountType) => updateAccount.mutate({ accountId, customName, accountType })}
-        onSync={accountId => syncAccount.mutate(accountId)}
-      />
+      {accounts.isLoading ? (
+        <ListLoading />
+      ) : (
+        <AccountsList
+          accounts={accounts.data ?? []}
+          isLoading={accounts.isLoading}
+          isOperating={isOperating}
+          isSaving={updateAccount.isPending}
+          onClear={onClearAccount}
+          onUpdate={(accountId, customName, accountType) => updateAccount.mutate({ accountId, customName, accountType })}
+          onSync={accountId => syncAccount.mutate(accountId)}
+        />
+      )}
     </section>
   )
 }

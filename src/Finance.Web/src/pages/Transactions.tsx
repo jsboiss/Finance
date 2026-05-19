@@ -3,6 +3,7 @@ import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, t
 import { Loader2, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Header } from '../components/Header'
+import { TableLoading } from '../components/LoadingSkeletons'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
@@ -54,7 +55,11 @@ export function Transactions() {
   })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/accounts') })
   const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<TransactionTag[]>('/api/tags') })
-  const merchantRules = useQuery({ queryKey: ['merchant-tags'], queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags') })
+  const merchantRules = useQuery({
+    enabled: showTagManagement,
+    queryKey: ['merchant-tags'],
+    queryFn: () => api<MerchantTagRule[]>('/api/merchant-tags')
+  })
   const createTag = useMutation({
     mutationFn: (input: CreateTagInput) => api<TransactionTag>('/api/tags', {
       method: 'POST',
@@ -370,31 +375,28 @@ export function Transactions() {
           </FilterField>
         </Card>
       )}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className={isLoading ? 'h-1 bg-primary/20 opacity-100' : 'h-1 bg-primary/20 opacity-0'}>
-          <div className="h-full w-1/3 animate-pulse bg-primary" />
+      {transactions.isLoading ? (
+        <TableLoading columns={5} rows={8} />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className={isLoading ? 'h-1 bg-primary/20 opacity-100' : 'h-1 bg-primary/20 opacity-0'}>
+            <div className="h-full w-1/3 animate-pulse bg-primary" />
+          </div>
+          <Table>
+            <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
+              {table.getHeaderGroups().map(x => (
+                <TableRow key={x.id}>{x.headers.map(y => <TableHead className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.header, y.getContext())}</TableHead>)}</TableRow>
+              ))}
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
+              {table.getRowModel().rows.map(x => (
+                <TableRow key={x.id}>{x.getVisibleCells().map(y => <TableCell className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.cell, y.getContext())}</TableCell>)}</TableRow>
+              ))}
+              {table.getRowModel().rows.length === 0 && <TableRow><TableCell className="px-4 py-8 text-muted-foreground" colSpan={5}>{hasFilters ? 'No transactions match the current filters.' : 'No transactions imported yet.'}</TableCell></TableRow>}
+            </TableBody>
+          </Table>
         </div>
-        <Table>
-          <TableHeader className="bg-muted text-xs uppercase text-muted-foreground">
-            {table.getHeaderGroups().map(x => (
-              <TableRow key={x.id}>{x.headers.map(y => <TableHead className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.header, y.getContext())}</TableHead>)}</TableRow>
-            ))}
-          </TableHeader>
-          <TableBody className="divide-y divide-border">
-            {transactions.isLoading && (
-              <TableRow>
-                <TableCell className="px-4 py-8 text-muted-foreground" colSpan={5}>
-                  <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Loading transactions...</span>
-                </TableCell>
-              </TableRow>
-            )}
-            {table.getRowModel().rows.map(x => (
-              <TableRow key={x.id}>{x.getVisibleCells().map(y => <TableCell className="px-4 py-3" key={y.id}>{flexRender(y.column.columnDef.cell, y.getContext())}</TableCell>)}</TableRow>
-            ))}
-            {!transactions.isLoading && table.getRowModel().rows.length === 0 && <TableRow><TableCell className="px-4 py-8 text-muted-foreground" colSpan={5}>{hasFilters ? 'No transactions match the current filters.' : 'No transactions imported yet.'}</TableCell></TableRow>}
-          </TableBody>
-        </Table>
-      </div>
+      )}
     </section>
   )
 }
