@@ -589,6 +589,72 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return true;
     }
 
+    public async Task<IReadOnlyList<BudgetProfileDto>> GetBudgetProfiles(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profiles = await dbContext.BudgetProfiles
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return await ToBudgetProfileDtos(tenantId, profiles, cancellationToken);
+    }
+
+    public async Task<BudgetProfileDto> CreateBudgetProfile(CreateBudgetProfileRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = new BudgetProfile
+        {
+            TenantId = tenantId,
+            Name = CleanRequired(request.Name, "Budget name is required."),
+            WeeklyLimitMinorUnits = Math.Max(0, request.WeeklyLimitMinorUnits),
+            Currency = CleanCurrency(request.Currency ?? "AUD"),
+            CategoryMatchers = JsonSerializer.Serialize(CleanCategoryMatchers(request.CategoryMatchers))
+        };
+
+        dbContext.BudgetProfiles.Add(profile);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await SetBudgetProfileTags(tenantId, profile.Id, request.TagIds, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (await ToBudgetProfileDtos(tenantId, [profile], cancellationToken)).First();
+    }
+
+    public async Task<BudgetProfileDto?> UpdateBudgetProfile(Guid profileId, UpdateBudgetProfileRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = await dbContext.BudgetProfiles.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == profileId, cancellationToken);
+        if (profile is null)
+        {
+            return null;
+        }
+
+        profile.Name = CleanRequired(request.Name, "Budget name is required.");
+        profile.WeeklyLimitMinorUnits = Math.Max(0, request.WeeklyLimitMinorUnits);
+        profile.Currency = CleanCurrency(request.Currency ?? profile.Currency);
+        profile.CategoryMatchers = JsonSerializer.Serialize(CleanCategoryMatchers(request.CategoryMatchers));
+        profile.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await SetBudgetProfileTags(tenantId, profile.Id, request.TagIds, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (await ToBudgetProfileDtos(tenantId, [profile], cancellationToken)).First();
+    }
+
+    public async Task<bool> DeleteBudgetProfile(Guid profileId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var profile = await dbContext.BudgetProfiles.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == profileId, cancellationToken);
+        if (profile is null)
+        {
+            return false;
+        }
+
+        await dbContext.BudgetProfileTags.Where(x => x.TenantId == tenantId && x.BudgetProfileId == profileId).ExecuteDeleteAsync(cancellationToken);
+        dbContext.BudgetProfiles.Remove(profile);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
@@ -631,6 +697,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
 
         await dbContext.BankTransactionTags.Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId).ExecuteDeleteAsync(cancellationToken);
+        await dbContext.BudgetProfileTags.Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.MerchantTags.Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId).ExecuteDeleteAsync(cancellationToken);
         await dbContext.TransactionTags.Where(x => x.TenantId == tenantId && x.Id == tagId).ExecuteDeleteAsync(cancellationToken);
         return true;
@@ -1552,6 +1619,148 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return values;
     }
 
+    private async Task<IReadOnlyList<BudgetProfileDto>> ToBudgetProfileDtos(Guid tenantId, IReadOnlyList<BudgetProfile> profiles, CancellationToken cancellationToken)
+    {
+        if (profiles.Count == 0)
+        {
+            return [];
+        }
+
+        var profileIds = profiles.Select(x => x.Id).ToList();
+        var profileTags = await dbContext.BudgetProfileTags
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && profileIds.Contains(x.BudgetProfileId))
+            .Join(dbContext.TransactionTags.AsNoTracking().Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { x.BudgetProfileId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+            .GroupBy(x => x.BudgetProfileId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentWeekStart = GetWeekStart(today);
+        var from = currentWeekStart.AddDays(-7 * 11);
+        var to = currentWeekStart.AddDays(6);
+        var transactions = await dbContext.BankTransactions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId
+                && x.Status == "posted"
+                && x.PostedDate >= from
+                && x.PostedDate <= to
+                && x.AmountMinorUnits < 0)
+            .Select(x => new BudgetTransactionRow(x.Id, x.Description, x.MerchantName, x.Category, x.AmountMinorUnits, x.Currency, x.PostedDate))
+            .ToListAsync(cancellationToken);
+        var transactionIds = transactions.Select(x => x.Id).ToList();
+        var tagsByTransaction = await dbContext.BankTransactionTags
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.BankTransactionId))
+            .Join(dbContext.TransactionTags.AsNoTracking().Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+            .GroupBy(x => x.BankTransactionId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
+
+        return profiles
+            .Select(x =>
+            {
+                var categoryMatchers = ParseCategoryMatchers(x.CategoryMatchers);
+                var tags = profileTags.GetValueOrDefault(x.Id, []);
+                var weeks = GetBudgetWeeks(x.WeeklyLimitMinorUnits, categoryMatchers, tags.Select(y => y.Id).ToHashSet(), transactions, tagsByTransaction, currentWeekStart);
+
+                return new BudgetProfileDto(
+                    x.Id,
+                    x.Name,
+                    x.WeeklyLimitMinorUnits,
+                    x.Currency,
+                    categoryMatchers,
+                    tags,
+                    weeks.First(),
+                    weeks.Skip(1).ToList());
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<BudgetWeekDto> GetBudgetWeeks(
+        long weeklyLimitMinorUnits,
+        IReadOnlyList<string> categoryMatchers,
+        HashSet<Guid> tagIds,
+        IReadOnlyList<BudgetTransactionRow> transactions,
+        IReadOnlyDictionary<Guid, List<TransactionTagDto>> tagsByTransaction,
+        DateOnly currentWeekStart)
+    {
+        return Enumerable.Range(0, 12)
+            .Select(x => currentWeekStart.AddDays(-7 * x))
+            .Select(x =>
+            {
+                var weekTransactions = transactions
+                    .Where(y => y.PostedDate >= x && y.PostedDate <= x.AddDays(6) && IsBudgetTransaction(y, tagsByTransaction.GetValueOrDefault(y.Id, []), categoryMatchers, tagIds))
+                    .OrderByDescending(y => y.PostedDate)
+                    .Select(y => new BudgetTransactionDto(
+                        y.Id,
+                        y.Description,
+                        y.MerchantName,
+                        y.Category,
+                        Math.Abs(y.AmountMinorUnits),
+                        y.Currency,
+                        y.PostedDate,
+                        tagsByTransaction.GetValueOrDefault(y.Id, [])))
+                    .ToList();
+                var spent = weekTransactions.Sum(y => y.AmountMinorUnits);
+                var usedPercent = weeklyLimitMinorUnits > 0 ? Math.Round(spent / (decimal)weeklyLimitMinorUnits * 100, 1) : 0;
+
+                return new BudgetWeekDto(x, x.AddDays(6), spent, weeklyLimitMinorUnits - spent, usedPercent, weekTransactions);
+            })
+            .ToList();
+    }
+
+    private static bool IsBudgetTransaction(BudgetTransactionRow transaction, IReadOnlyList<TransactionTagDto> tags, IReadOnlyList<string> categoryMatchers, HashSet<Guid> tagIds)
+    {
+        return categoryMatchers.Any(x => transaction.Category.Contains(x, StringComparison.OrdinalIgnoreCase))
+            || tags.Any(x => tagIds.Contains(x.Id));
+    }
+
+    private async Task SetBudgetProfileTags(Guid tenantId, Guid profileId, IReadOnlyList<Guid> tagIds, CancellationToken cancellationToken)
+    {
+        var validTagIds = await dbContext.TransactionTags
+            .Where(x => x.TenantId == tenantId && tagIds.Distinct().Contains(x.Id))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        await dbContext.BudgetProfileTags.Where(x => x.TenantId == tenantId && x.BudgetProfileId == profileId).ExecuteDeleteAsync(cancellationToken);
+
+        foreach (var tagId in validTagIds)
+        {
+            dbContext.BudgetProfileTags.Add(new BudgetProfileTag { TenantId = tenantId, BudgetProfileId = profileId, TransactionTagId = tagId });
+        }
+    }
+
+    private static IReadOnlyList<string> CleanCategoryMatchers(IReadOnlyList<string> categoryMatchers)
+    {
+        return categoryMatchers
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> ParseCategoryMatchers(string categoryMatchers)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(categoryMatchers) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static DateOnly GetWeekStart(DateOnly date)
+    {
+        var offset = ((int)date.DayOfWeek + 6) % 7;
+        return date.AddDays(-offset);
+    }
+
     private async Task ValidatePayBreakdownAccounts(Guid tenantId, Guid mainAccountId, Guid? savingsAccountId, CancellationToken cancellationToken)
     {
         if (savingsAccountId == mainAccountId)
@@ -1800,6 +2009,8 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     private sealed record SavingsTrajectoryDay(long DepositMinorUnits, long InterestMinorUnits, long WithdrawalMinorUnits);
 
     private sealed record PayBreakdownTransactionRow(Guid Id, string Description, string? MerchantName, long AmountMinorUnits, string Currency, DateOnly PostedDate);
+
+    private sealed record BudgetTransactionRow(Guid Id, string Description, string? MerchantName, string Category, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 
     private sealed class OverviewMonthAccumulator(string key, string label)
     {

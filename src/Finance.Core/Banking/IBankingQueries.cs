@@ -30,6 +30,14 @@ public interface IBankingQueries
 
     Task<bool> DeletePayBreakdownProfile(Guid profileId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<BudgetProfileDto>> GetBudgetProfiles(CancellationToken cancellationToken);
+
+    Task<BudgetProfileDto> CreateBudgetProfile(CreateBudgetProfileRequest request, CancellationToken cancellationToken);
+
+    Task<BudgetProfileDto?> UpdateBudgetProfile(Guid profileId, UpdateBudgetProfileRequest request, CancellationToken cancellationToken);
+
+    Task<bool> DeleteBudgetProfile(Guid profileId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken);
 
     Task<TransactionTagDto> CreateTag(CreateTransactionTagRequest request, CancellationToken cancellationToken);

@@ -172,6 +172,37 @@ export type PayBreakdownTransaction = {
   postedDate: string
 }
 
+export type BudgetProfile = {
+  id: string
+  name: string
+  weeklyLimitMinorUnits: number
+  currency: string
+  categoryMatchers: string[]
+  tags: TransactionTag[]
+  currentWeek: BudgetWeek
+  history: BudgetWeek[]
+}
+
+export type BudgetWeek = {
+  from: string
+  to: string
+  spentMinorUnits: number
+  remainingMinorUnits: number
+  usedPercent: number
+  transactions: BudgetTransaction[]
+}
+
+export type BudgetTransaction = {
+  id: string
+  description: string
+  merchantName?: string
+  category: string
+  amountMinorUnits: number
+  currency: string
+  postedDate: string
+  tags: TransactionTag[]
+}
+
 export type Subscription = {
   id: string
   name: string

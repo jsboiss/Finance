@@ -106,6 +106,30 @@ public sealed record CreatePayBreakdownProfileRequest(string Name, Guid MainAcco
 
 public sealed record UpdatePayBreakdownProfileRequest(string Name, Guid MainAccountId, Guid? SavingsAccountId, long FortnightlyPayMinorUnits, string? Currency);
 
+public sealed record BudgetProfileDto(
+    Guid Id,
+    string Name,
+    long WeeklyLimitMinorUnits,
+    string Currency,
+    IReadOnlyList<string> CategoryMatchers,
+    IReadOnlyList<TransactionTagDto> Tags,
+    BudgetWeekDto CurrentWeek,
+    IReadOnlyList<BudgetWeekDto> History);
+
+public sealed record BudgetWeekDto(
+    DateOnly From,
+    DateOnly To,
+    long SpentMinorUnits,
+    long RemainingMinorUnits,
+    decimal UsedPercent,
+    IReadOnlyList<BudgetTransactionDto> Transactions);
+
+public sealed record BudgetTransactionDto(Guid Id, string Description, string? MerchantName, string Category, long AmountMinorUnits, string Currency, DateOnly PostedDate, IReadOnlyList<TransactionTagDto> Tags);
+
+public sealed record CreateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
+
+public sealed record UpdateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
+
 public sealed record SubscriptionDto(
     Guid Id,
     string Name,

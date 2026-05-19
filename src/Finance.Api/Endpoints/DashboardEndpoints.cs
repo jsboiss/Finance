@@ -32,6 +32,10 @@ public static class DashboardEndpoints
         group.MapPost("/pay-breakdowns", CreatePayBreakdownProfile);
         group.MapPut("/pay-breakdowns/{profileId:guid}", UpdatePayBreakdownProfile);
         group.MapDelete("/pay-breakdowns/{profileId:guid}", DeletePayBreakdownProfile);
+        group.MapGet("/budgets", GetBudgetProfiles);
+        group.MapPost("/budgets", CreateBudgetProfile);
+        group.MapPut("/budgets/{profileId:guid}", UpdateBudgetProfile);
+        group.MapDelete("/budgets/{profileId:guid}", DeleteBudgetProfile);
         group.MapGet("/tags", GetTags);
         group.MapPost("/tags", CreateTag);
         group.MapDelete("/tags/{tagId:guid}", DeleteTag);
@@ -141,6 +145,27 @@ public static class DashboardEndpoints
     private static async Task<Results<NoContent, NotFound>> DeletePayBreakdownProfile(Guid profileId, IBankingQueries queries, CancellationToken cancellationToken)
     {
         return await queries.DeletePayBreakdownProfile(profileId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
+    }
+
+    private static Task<IReadOnlyList<BudgetProfileDto>> GetBudgetProfiles(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetBudgetProfiles(cancellationToken);
+    }
+
+    private static Task<BudgetProfileDto> CreateBudgetProfile(CreateBudgetProfileRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.CreateBudgetProfile(request, cancellationToken);
+    }
+
+    private static async Task<Results<Ok<BudgetProfileDto>, NotFound>> UpdateBudgetProfile(Guid profileId, UpdateBudgetProfileRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var profile = await queries.UpdateBudgetProfile(profileId, request, cancellationToken);
+        return profile is null ? TypedResults.NotFound() : TypedResults.Ok(profile);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DeleteBudgetProfile(Guid profileId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return await queries.DeleteBudgetProfile(profileId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
     private static Task<IReadOnlyList<TransactionTagDto>> GetTags(IBankingQueries queries, CancellationToken cancellationToken)

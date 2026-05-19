@@ -140,6 +140,27 @@ public sealed class PayBreakdownProfile
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class BudgetProfile
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = "";
+    public long WeeklyLimitMinorUnits { get; set; }
+    public string Currency { get; set; } = "AUD";
+    public string CategoryMatchers { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class BudgetProfileTag
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid BudgetProfileId { get; set; }
+    public Guid TransactionTagId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class MerchantTag
 {
     public Guid Id { get; set; } = Guid.NewGuid();

@@ -17,6 +17,8 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<BankTransactionTag> BankTransactionTags => Set<BankTransactionTag>();
     public DbSet<OverviewMetricSnapshot> OverviewMetricSnapshots => Set<OverviewMetricSnapshot>();
     public DbSet<PayBreakdownProfile> PayBreakdownProfiles => Set<PayBreakdownProfile>();
+    public DbSet<BudgetProfile> BudgetProfiles => Set<BudgetProfile>();
+    public DbSet<BudgetProfileTag> BudgetProfileTags => Set<BudgetProfileTag>();
     public DbSet<MerchantTag> MerchantTags => Set<MerchantTag>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<SubscriptionTransaction> SubscriptionTransactions => Set<SubscriptionTransaction>();
@@ -64,6 +66,17 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         {
             x.HasIndex(y => new { y.TenantId, y.Name }).IsUnique();
             x.HasIndex(y => new { y.TenantId, y.MainAccountId });
+        });
+        modelBuilder.Entity<BudgetProfile>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.Name }).IsUnique();
+            x.Property(y => y.Currency).HasDefaultValue("AUD");
+            x.Property(y => y.CategoryMatchers).HasDefaultValue("[]");
+        });
+        modelBuilder.Entity<BudgetProfileTag>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.BudgetProfileId, y.TransactionTagId }).IsUnique();
+            x.HasIndex(y => new { y.TenantId, y.TransactionTagId });
         });
         modelBuilder.Entity<MerchantTag>(x =>
         {
