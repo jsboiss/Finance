@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkClient redbarkClient) : IRedbarkImportService
 {
+    private sealed record WebhookTransactionResult(bool IsNew);
+
     public Task DiscoverAccounts(Guid tenantId, CancellationToken cancellationToken)
     {
         return ImportAccounts(tenantId, cancellationToken);
@@ -37,45 +39,47 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
 
     public async Task ProcessWebhook(string eventId, string eventType, string rawJson, CancellationToken cancellationToken)
     {
-        var tenantId = await ResolveWebhookTenant(eventType, rawJson, cancellationToken);
-        var webhookEvent = await dbContext.WebhookEvents.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ExternalEventId == eventId, cancellationToken);
-        if (webhookEvent?.ProcessedAt is not null)
-        {
-            return;
-        }
-
-        if (webhookEvent is null)
-        {
-            webhookEvent = new WebhookEvent { TenantId = tenantId, ExternalEventId = eventId };
-            dbContext.WebhookEvents.Add(webhookEvent);
-        }
-
-        webhookEvent.EventType = eventType;
-        webhookEvent.RawJson = rawJson;
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        if (eventType == "transactions.synced")
-        {
-            await ProcessTransactionWebhook(tenantId, rawJson, cancellationToken);
-        }
-
-        webhookEvent.ProcessedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task<Guid> ResolveWebhookTenant(string eventType, string rawJson, CancellationToken cancellationToken)
-    {
         if (eventType != "transactions.synced")
         {
             throw new InvalidOperationException($"Webhook type '{eventType}' cannot be routed to a tenant.");
         }
 
+        var accountTenantIds = await ResolveWebhookAccountTenants(rawJson, cancellationToken);
+        var tenantIds = accountTenantIds.Values.Distinct().ToList();
+        foreach (var tenantId in tenantIds)
+        {
+            var webhookEvent = await dbContext.WebhookEvents.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.ExternalEventId == eventId, cancellationToken);
+            if (webhookEvent?.ProcessedAt is not null)
+            {
+                continue;
+            }
+
+            if (webhookEvent is null)
+            {
+                webhookEvent = new WebhookEvent { TenantId = tenantId, ExternalEventId = eventId };
+                dbContext.WebhookEvents.Add(webhookEvent);
+            }
+
+            webhookEvent.EventType = eventType;
+            webhookEvent.RawJson = rawJson;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await ProcessTransactionWebhook(tenantId, rawJson, accountTenantIds, cancellationToken);
+
+            webhookEvent.ProcessedAt = DateTimeOffset.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task<Dictionary<string, Guid>> ResolveWebhookAccountTenants(string rawJson, CancellationToken cancellationToken)
+    {
         using var document = JsonDocument.Parse(rawJson);
         var data = document.RootElement.GetProperty("data");
         var externalAccountIds = data.GetProperty("new").EnumerateArray()
             .Concat(data.GetProperty("updated").EnumerateArray())
             .Select(x => GetNullableString(x, "account_id"))
             .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
             .Distinct()
             .ToList();
 
@@ -84,26 +88,60 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             throw new InvalidOperationException("Webhook did not include any account IDs that can be routed to a tenant.");
         }
 
-        var tenantIds = await dbContext.BankAccounts
+        var assignedAccounts = await dbContext.BankAccounts
+            .Join(dbContext.BankConnections,
+                x => x.BankConnectionId,
+                y => y.Id,
+                (x, y) => new { Account = x, Connection = y })
+            .Join(dbContext.RedbarkConnectionAssignments,
+                x => new { x.Account.TenantId, x.Connection.ExternalConnectionId },
+                y => new { y.TenantId, y.ExternalConnectionId },
+                (x, y) => x.Account)
             .Where(x => externalAccountIds.Contains(x.ExternalAccountId))
-            .Select(x => x.TenantId)
-            .Distinct()
+            .Select(x => new { x.ExternalAccountId, x.TenantId })
             .ToListAsync(cancellationToken);
 
-        if (tenantIds.Count == 1)
+        var accountTenantIds = assignedAccounts
+            .GroupBy(x => x.ExternalAccountId)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.TenantId).Distinct().ToList());
+        var ambiguousAccountIds = accountTenantIds.Where(x => x.Value.Count > 1).Select(x => x.Key).ToList();
+        if (ambiguousAccountIds.Count > 0)
         {
-            return tenantIds[0];
+            throw new InvalidOperationException($"Webhook referenced accounts assigned to multiple tenants: {string.Join(", ", ambiguousAccountIds)}.");
         }
 
-        if (tenantIds.Count > 1)
+        var missingAccountIds = externalAccountIds.Where(x => !accountTenantIds.ContainsKey(x)).ToList();
+        if (missingAccountIds.Count > 0)
         {
-            throw new InvalidOperationException("Webhook referenced accounts from multiple tenants.");
+            var unassignedAccounts = await dbContext.BankAccounts
+                .Where(x => externalAccountIds.Contains(x.ExternalAccountId))
+                .Select(x => new { x.ExternalAccountId, x.TenantId })
+                .ToListAsync(cancellationToken);
+            var unassignedAccountTenantIds = unassignedAccounts
+                .GroupBy(x => x.ExternalAccountId)
+                .ToDictionary(x => x.Key, x => x.Select(y => y.TenantId).Distinct().ToList());
+            ambiguousAccountIds = unassignedAccountTenantIds.Where(x => x.Value.Count > 1).Select(x => x.Key).ToList();
+            if (ambiguousAccountIds.Count > 0)
+            {
+                throw new InvalidOperationException($"Webhook referenced unassigned accounts from multiple tenants: {string.Join(", ", ambiguousAccountIds)}. Assign the Redbark connection to the owning tenant.");
+            }
+
+            foreach (var accountId in missingAccountIds.Where(unassignedAccountTenantIds.ContainsKey))
+            {
+                accountTenantIds[accountId] = unassignedAccountTenantIds[accountId];
+            }
         }
 
-        throw new InvalidOperationException($"Webhook referenced unknown account IDs: {string.Join(", ", externalAccountIds)}. Assign the Redbark connection and run account discovery first.");
+        missingAccountIds = externalAccountIds.Where(x => !accountTenantIds.ContainsKey(x)).ToList();
+        if (missingAccountIds.Count > 0)
+        {
+            throw new InvalidOperationException($"Webhook referenced unknown account IDs: {string.Join(", ", missingAccountIds)}. Assign the Redbark connection and run account discovery first.");
+        }
+
+        return accountTenantIds.ToDictionary(x => x.Key, x => x.Value[0]);
     }
 
-    private async Task ProcessTransactionWebhook(Guid tenantId, string rawJson, CancellationToken cancellationToken)
+    private async Task ProcessTransactionWebhook(Guid tenantId, string rawJson, IReadOnlyDictionary<string, Guid> accountTenantIds, CancellationToken cancellationToken)
     {
         using var document = JsonDocument.Parse(rawJson);
         var data = document.RootElement.GetProperty("data");
@@ -111,6 +149,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             .Concat(data.GetProperty("updated").EnumerateArray())
             .Where(x => GetNullableString(x, "status")?.Equals("posted", StringComparison.OrdinalIgnoreCase) ?? true)
             .Select(ToTransactionDto)
+            .Where(x => accountTenantIds.TryGetValue(x.AccountId, out var mappedTenantId) && mappedTenantId == tenantId)
             .ToList();
 
         if (transactions.Count == 0)
@@ -130,9 +169,34 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         }
 
         var importedCount = 0;
+        var transactionIds = transactions.Select(x => x.Id).Distinct().ToList();
+        var existingTransactions = await dbContext.BankTransactions
+            .Where(x => x.TenantId == tenantId && transactionIds.Contains(x.ExternalTransactionId))
+            .ToDictionaryAsync(x => x.ExternalTransactionId, cancellationToken);
+        var merchantTags = await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId)
+            .Select(x => new { x.MerchantKey, x.TransactionTagId })
+            .ToListAsync(cancellationToken);
+        var merchantTagsByKey = merchantTags
+            .GroupBy(x => x.MerchantKey)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.TransactionTagId).Distinct().ToList());
+        var existingTransactionIds = existingTransactions.Values.Select(x => x.Id).ToList();
+        var existingTagKeys = await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && existingTransactionIds.Contains(x.BankTransactionId))
+            .Select(x => new { x.BankTransactionId, x.TransactionTagId })
+            .ToListAsync(cancellationToken);
+        var existingTagKeysSet = existingTagKeys.Select(x => (x.BankTransactionId, x.TransactionTagId)).ToHashSet();
+
         foreach (var transaction in transactions)
         {
-            importedCount += await UpsertTransaction(tenantId, accountsByExternalId[transaction.AccountId].Id, transaction, cancellationToken) ? 1 : 0;
+            var bankTransaction = UpsertWebhookTransaction(
+                tenantId,
+                accountsByExternalId[transaction.AccountId].Id,
+                transaction,
+                existingTransactions,
+                merchantTagsByKey,
+                existingTagKeysSet);
+            importedCount += bankTransaction.IsNew ? 1 : 0;
         }
 
         dbContext.ImportRuns.Add(new ImportRun
@@ -144,6 +208,59 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             CompletedAt = DateTimeOffset.UtcNow
         });
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private WebhookTransactionResult UpsertWebhookTransaction(
+        Guid tenantId,
+        Guid accountId,
+        RedbarkTransactionDto transaction,
+        Dictionary<string, BankTransaction> existingTransactions,
+        Dictionary<string, List<Guid>> merchantTagsByKey,
+        HashSet<(Guid BankTransactionId, Guid TransactionTagId)> existingTagKeys)
+    {
+        if (!existingTransactions.TryGetValue(transaction.Id, out var entity))
+        {
+            entity = new BankTransaction { TenantId = tenantId, ExternalTransactionId = transaction.Id };
+            existingTransactions[transaction.Id] = entity;
+            dbContext.BankTransactions.Add(entity);
+        }
+
+        var isNew = entity.Id == Guid.Empty || dbContext.Entry(entity).State == EntityState.Added;
+        entity.BankAccountId = accountId;
+        entity.ExternalAccountName = transaction.AccountName;
+        entity.Description = transaction.Description;
+        entity.MerchantName = transaction.MerchantName;
+        entity.MerchantCategoryCode = transaction.MerchantCategoryCode;
+        entity.Category = string.IsNullOrWhiteSpace(transaction.Category) ? "Uncategorized" : transaction.Category;
+        entity.AmountMinorUnits = transaction.AmountMinorUnits;
+        entity.Currency = transaction.Currency;
+        entity.PostedDate = transaction.PostedDate;
+        entity.PostedAt = transaction.PostedAt;
+        entity.Direction = transaction.Direction;
+        entity.Status = transaction.Status;
+        entity.RawJson = transaction.Raw;
+        ApplyMerchantTags(tenantId, entity, merchantTagsByKey, existingTagKeys);
+        return new WebhookTransactionResult(isNew);
+    }
+
+    private void ApplyMerchantTags(Guid tenantId, BankTransaction transaction, Dictionary<string, List<Guid>> merchantTagsByKey, HashSet<(Guid BankTransactionId, Guid TransactionTagId)> existingTagKeys)
+    {
+        var merchantName = string.IsNullOrWhiteSpace(transaction.MerchantName) ? transaction.Description : transaction.MerchantName;
+        if (string.IsNullOrWhiteSpace(merchantName))
+        {
+            return;
+        }
+
+        var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
+        if (!merchantTagsByKey.TryGetValue(merchantKey, out var tagIds))
+        {
+            return;
+        }
+
+        foreach (var tagId in tagIds.Where(x => existingTagKeys.Add((transaction.Id, x))))
+        {
+            dbContext.BankTransactionTags.Add(new BankTransactionTag { TenantId = tenantId, BankTransactionId = transaction.Id, TransactionTagId = tagId, Source = "merchant" });
+        }
     }
 
     private async Task ImportRange(Guid tenantId, DateOnly from, DateOnly to, string source, CancellationToken cancellationToken)

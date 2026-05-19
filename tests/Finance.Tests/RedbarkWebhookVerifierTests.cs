@@ -10,23 +10,26 @@ public sealed class RedbarkWebhookVerifierTests
     public void Verify_accepts_valid_payload()
     {
         var payload = Encoding.UTF8.GetBytes("""{"id":"evt_1"}""");
-        var signature = Sign(payload, "secret");
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var signature = Sign(payload, "secret", timestamp);
 
-        Assert.True(new RedbarkWebhookVerifier().Verify(payload, "secret", $"sha256={signature}"));
+        Assert.True(new RedbarkWebhookVerifier().Verify(payload, "secret", $"sha256={signature}", timestamp));
     }
 
     [Fact]
     public void Verify_rejects_tampered_payload()
     {
         var payload = Encoding.UTF8.GetBytes("""{"id":"evt_1"}""");
-        var signature = Sign(payload, "secret");
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var signature = Sign(payload, "secret", timestamp);
 
-        Assert.False(new RedbarkWebhookVerifier().Verify(Encoding.UTF8.GetBytes("""{"id":"evt_2"}"""), "secret", signature));
+        Assert.False(new RedbarkWebhookVerifier().Verify(Encoding.UTF8.GetBytes("""{"id":"evt_2"}"""), "secret", signature, timestamp));
     }
 
-    private static string Sign(byte[] payload, string secret)
+    private static string Sign(byte[] payload, string secret, string timestamp)
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        return Convert.ToHexString(hmac.ComputeHash(payload)).ToLowerInvariant();
+        var signedContent = Encoding.UTF8.GetBytes($"{timestamp}.{Encoding.UTF8.GetString(payload)}");
+        return Convert.ToHexString(hmac.ComputeHash(signedContent)).ToLowerInvariant();
     }
 }

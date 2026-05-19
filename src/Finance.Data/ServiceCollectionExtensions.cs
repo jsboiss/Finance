@@ -33,7 +33,7 @@ public static class ServiceCollectionExtensions
         {
             var jobKey = new JobKey(nameof(RedbarkReconciliationJob));
             x.AddJob<RedbarkReconciliationJob>(y => y.WithIdentity(jobKey));
-            x.AddTrigger(y => y.ForJob(jobKey).WithIdentity("redbark-reconciliation-daily").WithCronSchedule("0 0 2 * * ?"));
+            x.AddTrigger(y => y.ForJob(jobKey).WithIdentity("redbark-reconciliation-daily").WithCronSchedule("0 0 14 * * ?"));
         });
         services.AddQuartzHostedService(x => x.WaitForJobsToComplete = true);
         return services;
