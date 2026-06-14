@@ -442,15 +442,34 @@ function DebouncedFilterInput({ value, onChange, placeholder }: { value: string;
 
 function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTag[]; selectedTags: TransactionTag[]; onChange: (tagIds: string[]) => void }) {
   const [isOpen, setIsOpen] = useState(false)
-  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0 })
+  const [popupPosition, setPopupPosition] = useState<{ left: number; maxHeight: number; placement: 'above' | 'below'; top: number }>({ left: 0, maxHeight: 280, placement: 'below', top: 0 })
   const [selectedTagIds, setSelectedTagIds] = useState(() => selectedTags.map(x => x.id))
   const containerRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  const selectedIds = new Set(selectedTagIds)
+  const selectedIds = new Set(isOpen ? selectedTagIds : selectedTags.map(x => x.id))
   const visibleSelectedTags = allTags.filter(x => selectedIds.has(x.id))
-  useEffect(() => {
-    setSelectedTagIds(selectedTags.map(x => x.id))
-  }, [selectedTags])
+  const updatePopupPosition = useCallback(() => {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (!rect) {
+      return
+    }
+
+    const viewportGap = 8
+    const triggerGap = 4
+    const popupMinWidth = 192
+    const preferredMaxHeight = 280
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+    const availableBelow = viewportHeight - rect.bottom - viewportGap - triggerGap
+    const availableAbove = rect.top - viewportGap - triggerGap
+    const placement = availableBelow >= preferredMaxHeight || availableBelow >= availableAbove ? 'below' : 'above'
+    const availableHeight = placement === 'below' ? availableBelow : availableAbove
+    const maxHeight = Math.max(0, Math.min(preferredMaxHeight, availableHeight))
+    const left = Math.min(Math.max(viewportGap, rect.left), Math.max(viewportGap, viewportWidth - popupMinWidth - viewportGap))
+    const top = placement === 'below' ? rect.bottom + triggerGap : rect.top - triggerGap
+
+    setPopupPosition({ left, maxHeight, placement, top })
+  }, [])
 
   useEffect(() => {
     if (!isOpen) {
@@ -467,6 +486,20 @@ function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTa
     return () => document.removeEventListener('mousedown', closeOnOutsideClick)
   }, [isOpen, selectedTags])
 
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    updatePopupPosition()
+    window.addEventListener('resize', updatePopupPosition)
+    window.addEventListener('scroll', updatePopupPosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePopupPosition)
+      window.removeEventListener('scroll', updatePopupPosition, true)
+    }
+  }, [isOpen, updatePopupPosition])
+
   if (allTags.length === 0) {
     return null
   }
@@ -477,11 +510,8 @@ function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTa
         aria-label="Edit transaction tags"
         className="flex min-h-7 max-w-full flex-wrap items-center gap-1.5 rounded-md border border-transparent px-1.5 py-1 text-left hover:border-border hover:bg-muted"
         onClick={() => {
-          const rect = buttonRef.current?.getBoundingClientRect()
-          if (rect) {
-            setPopupPosition({ left: rect.left, top: rect.bottom + 4 })
-          }
-
+          updatePopupPosition()
+          setSelectedTagIds(selectedTags.map(x => x.id))
           setIsOpen(true)
         }}
         ref={buttonRef}
@@ -490,7 +520,10 @@ function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTa
         {visibleSelectedTags.length > 0 ? visibleSelectedTags.map(x => <TagPill key={x.id} tag={x} />) : <Plus className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
       {isOpen && (
-        <div className="fixed z-20 grid min-w-48 gap-1 rounded-md border border-border bg-background p-2 shadow-lg" style={{ left: popupPosition.left, top: popupPosition.top }}>
+        <div
+          className="fixed z-20 grid min-w-48 gap-1 overflow-y-auto rounded-md border border-border bg-background p-2 shadow-lg"
+          style={{ left: popupPosition.left, maxHeight: popupPosition.maxHeight, top: popupPosition.top, transform: popupPosition.placement === 'above' ? 'translateY(-100%)' : undefined }}
+        >
           {allTags.map(x => (
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted" key={x.id}>
               <input
