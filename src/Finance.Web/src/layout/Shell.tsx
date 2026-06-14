@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Activity, Banknote, CircleDollarSign, Landmark, ReceiptText, RefreshCcw, Search, Settings as SettingsIcon, Target, WalletCards } from 'lucide-react'
+import { Activity, Banknote, CircleDollarSign, Landmark, ReceiptText, RefreshCcw, Search, Settings as SettingsIcon, ShoppingCart, Target, WalletCards } from 'lucide-react'
 import { Suspense } from 'react'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { NavLink } from './NavLink'
@@ -20,6 +20,7 @@ export function Shell() {
           <NavLink to="/accounts" icon={<Banknote className="size-4" />} label="Accounts" />
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/budgets" icon={<Target className="size-4" />} label="Budgets" />
+          <NavLink to="/spending-planner" icon={<ShoppingCart className="size-4" />} label="Planner" />
           <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Breakdowns" />
           <NavLink to="/home-loans" icon={<Landmark className="size-4" />} label="Home Loans" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />
@@ -40,6 +41,7 @@ export function Shell() {
           <NavLink to="/accounts" icon={<Banknote className="size-4" />} label="Accounts" />
           <NavLink to="/transactions" icon={<Search className="size-4" />} label="Transactions" />
           <NavLink to="/budgets" icon={<Target className="size-4" />} label="Budgets" />
+          <NavLink to="/spending-planner" icon={<ShoppingCart className="size-4" />} label="Planner" />
           <NavLink to="/pay-breakdowns" icon={<WalletCards className="size-4" />} label="Breakdowns" />
           <NavLink to="/home-loans" icon={<Landmark className="size-4" />} label="Home Loans" />
           <NavLink to="/subscriptions" icon={<ReceiptText className="size-4" />} label="Subscriptions" />

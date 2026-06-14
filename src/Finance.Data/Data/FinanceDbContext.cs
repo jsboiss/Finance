@@ -19,6 +19,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<PayBreakdownProfile> PayBreakdownProfiles => Set<PayBreakdownProfile>();
     public DbSet<BudgetProfile> BudgetProfiles => Set<BudgetProfile>();
     public DbSet<BudgetProfileTag> BudgetProfileTags => Set<BudgetProfileTag>();
+    public DbSet<SpendingPlannerItem> SpendingPlannerItems => Set<SpendingPlannerItem>();
     public DbSet<MerchantTag> MerchantTags => Set<MerchantTag>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<SubscriptionTransaction> SubscriptionTransactions => Set<SubscriptionTransaction>();
@@ -82,6 +83,12 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
         {
             x.HasIndex(y => new { y.TenantId, y.BudgetProfileId, y.TransactionTagId }).IsUnique();
             x.HasIndex(y => new { y.TenantId, y.TransactionTagId });
+        });
+        modelBuilder.Entity<SpendingPlannerItem>(x =>
+        {
+            x.HasIndex(y => new { y.TenantId, y.IsPurchased });
+            x.HasIndex(y => new { y.TenantId, y.TargetDate });
+            x.Property(y => y.Currency).HasDefaultValue("AUD");
         });
         modelBuilder.Entity<MerchantTag>(x =>
         {

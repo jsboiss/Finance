@@ -38,6 +38,14 @@ public interface IBankingQueries
 
     Task<bool> DeleteBudgetProfile(Guid profileId, CancellationToken cancellationToken);
 
+    Task<SpendingPlannerDto> GetSpendingPlanner(CancellationToken cancellationToken);
+
+    Task<SpendingPlannerItemDto> CreateSpendingPlannerItem(CreateSpendingPlannerItemRequest request, CancellationToken cancellationToken);
+
+    Task<SpendingPlannerItemDto?> UpdateSpendingPlannerItem(Guid itemId, UpdateSpendingPlannerItemRequest request, CancellationToken cancellationToken);
+
+    Task<bool> DeleteSpendingPlannerItem(Guid itemId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken);
 
     Task<TransactionTagDto> CreateTag(CreateTransactionTagRequest request, CancellationToken cancellationToken);

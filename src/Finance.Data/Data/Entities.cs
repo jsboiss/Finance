@@ -163,6 +163,20 @@ public sealed class BudgetProfileTag
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class SpendingPlannerItem
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public string Name { get; set; } = "";
+    public long AmountMinorUnits { get; set; }
+    public string Currency { get; set; } = "AUD";
+    public DateOnly? TargetDate { get; set; }
+    public bool IsPurchased { get; set; }
+    public DateTimeOffset? PurchasedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class MerchantTag
 {
     public Guid Id { get; set; } = Guid.NewGuid();

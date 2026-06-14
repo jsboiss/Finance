@@ -679,6 +679,92 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return true;
     }
 
+    public async Task<SpendingPlannerDto> GetSpendingPlanner(CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var itemRows = await dbContext.SpendingPlannerItems
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .OrderBy(x => x.IsPurchased)
+            .ThenBy(x => x.TargetDate == null)
+            .ThenBy(x => x.TargetDate)
+            .ThenByDescending(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+        var items = itemRows.Select(ToSpendingPlannerItemDto).ToList();
+        var savingsAccountIds = await dbContext.BankAccounts
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.AccountType == "Savings")
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var savingsBalances = await dbContext.Balances
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId && savingsAccountIds.Contains(x.BankAccountId))
+            .GroupBy(x => x.BankAccountId)
+            .Select(x => x.OrderByDescending(y => y.AsOf).Select(y => y.CurrentMinorUnits).FirstOrDefault())
+            .ToListAsync(cancellationToken);
+        var plannedTotal = items.Where(x => !x.IsPurchased).Sum(x => x.AmountMinorUnits);
+        var purchasedTotal = items.Where(x => x.IsPurchased).Sum(x => x.AmountMinorUnits);
+        var savingsBalance = savingsBalances.Sum(x => x ?? 0);
+        var currency = items.FirstOrDefault()?.Currency ?? "AUD";
+
+        return new SpendingPlannerDto(items, plannedTotal, purchasedTotal, savingsBalance, savingsBalance - plannedTotal, currency);
+    }
+
+    public async Task<SpendingPlannerItemDto> CreateSpendingPlannerItem(CreateSpendingPlannerItemRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var item = new SpendingPlannerItem
+        {
+            TenantId = tenantId,
+            Name = CleanRequired(request.Name, "Planner item name is required."),
+            AmountMinorUnits = Math.Max(0, request.AmountMinorUnits),
+            Currency = CleanCurrency(request.Currency ?? "AUD"),
+            TargetDate = request.TargetDate
+        };
+
+        dbContext.SpendingPlannerItems.Add(item);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToSpendingPlannerItemDto(item);
+    }
+
+    public async Task<SpendingPlannerItemDto?> UpdateSpendingPlannerItem(Guid itemId, UpdateSpendingPlannerItemRequest request, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var item = await dbContext.SpendingPlannerItems.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == itemId, cancellationToken);
+        if (item is null)
+        {
+            return null;
+        }
+
+        var wasPurchased = item.IsPurchased;
+        item.Name = CleanRequired(request.Name, "Planner item name is required.");
+        item.AmountMinorUnits = Math.Max(0, request.AmountMinorUnits);
+        item.Currency = CleanCurrency(request.Currency ?? item.Currency);
+        item.TargetDate = request.TargetDate;
+        item.IsPurchased = request.IsPurchased;
+        item.PurchasedAt = request.IsPurchased
+            ? wasPurchased ? item.PurchasedAt ?? DateTimeOffset.UtcNow : DateTimeOffset.UtcNow
+            : null;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToSpendingPlannerItemDto(item);
+    }
+
+    public async Task<bool> DeleteSpendingPlannerItem(Guid itemId, CancellationToken cancellationToken)
+    {
+        var tenantId = tenantContext.TenantId;
+        var item = await dbContext.SpendingPlannerItems.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == itemId, cancellationToken);
+        if (item is null)
+        {
+            return false;
+        }
+
+        dbContext.SpendingPlannerItems.Remove(item);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<TransactionTagDto>> GetTags(CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
@@ -1359,6 +1445,20 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             suggestion.LastPaymentDate,
             suggestion.NextExpectedPaymentDate,
             sampleTransactionIds);
+    }
+
+    private static SpendingPlannerItemDto ToSpendingPlannerItemDto(SpendingPlannerItem item)
+    {
+        return new SpendingPlannerItemDto(
+            item.Id,
+            item.Name,
+            item.AmountMinorUnits,
+            item.Currency,
+            item.TargetDate,
+            item.IsPurchased,
+            item.PurchasedAt,
+            item.CreatedAt,
+            item.UpdatedAt);
     }
 
     private static string CleanRequired(string value, string message)

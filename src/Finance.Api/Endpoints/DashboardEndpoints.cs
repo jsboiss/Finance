@@ -36,6 +36,10 @@ public static class DashboardEndpoints
         group.MapPost("/budgets", CreateBudgetProfile);
         group.MapPut("/budgets/{profileId:guid}", UpdateBudgetProfile);
         group.MapDelete("/budgets/{profileId:guid}", DeleteBudgetProfile);
+        group.MapGet("/spending-planner", GetSpendingPlanner);
+        group.MapPost("/spending-planner/items", CreateSpendingPlannerItem);
+        group.MapPut("/spending-planner/items/{itemId:guid}", UpdateSpendingPlannerItem);
+        group.MapDelete("/spending-planner/items/{itemId:guid}", DeleteSpendingPlannerItem);
         group.MapGet("/tags", GetTags);
         group.MapPost("/tags", CreateTag);
         group.MapDelete("/tags/{tagId:guid}", DeleteTag);
@@ -166,6 +170,27 @@ public static class DashboardEndpoints
     private static async Task<Results<NoContent, NotFound>> DeleteBudgetProfile(Guid profileId, IBankingQueries queries, CancellationToken cancellationToken)
     {
         return await queries.DeleteBudgetProfile(profileId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
+    }
+
+    private static Task<SpendingPlannerDto> GetSpendingPlanner(IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.GetSpendingPlanner(cancellationToken);
+    }
+
+    private static Task<SpendingPlannerItemDto> CreateSpendingPlannerItem(CreateSpendingPlannerItemRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return queries.CreateSpendingPlannerItem(request, cancellationToken);
+    }
+
+    private static async Task<Results<Ok<SpendingPlannerItemDto>, NotFound>> UpdateSpendingPlannerItem(Guid itemId, UpdateSpendingPlannerItemRequest request, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        var item = await queries.UpdateSpendingPlannerItem(itemId, request, cancellationToken);
+        return item is null ? TypedResults.NotFound() : TypedResults.Ok(item);
+    }
+
+    private static async Task<Results<NoContent, NotFound>> DeleteSpendingPlannerItem(Guid itemId, IBankingQueries queries, CancellationToken cancellationToken)
+    {
+        return await queries.DeleteSpendingPlannerItem(itemId, cancellationToken) ? TypedResults.NoContent() : TypedResults.NotFound();
     }
 
     private static Task<IReadOnlyList<TransactionTagDto>> GetTags(IBankingQueries queries, CancellationToken cancellationToken)

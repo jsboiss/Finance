@@ -208,6 +208,27 @@ export type BudgetTransaction = {
   tags: TransactionTag[]
 }
 
+export type SpendingPlanner = {
+  items: SpendingPlannerItem[]
+  plannedTotalMinorUnits: number
+  purchasedTotalMinorUnits: number
+  savingsBalanceMinorUnits: number
+  remainingSavingsMinorUnits: number
+  currency: string
+}
+
+export type SpendingPlannerItem = {
+  id: string
+  name: string
+  amountMinorUnits: number
+  currency: string
+  targetDate?: string
+  isPurchased: boolean
+  purchasedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type Subscription = {
   id: string
   name: string

@@ -131,6 +131,20 @@ public sealed record CreateBudgetProfileRequest(string Name, long WeeklyLimitMin
 
 public sealed record UpdateBudgetProfileRequest(string Name, long WeeklyLimitMinorUnits, string? Currency, int? WeekStartsOn, IReadOnlyList<string> CategoryMatchers, IReadOnlyList<Guid> TagIds);
 
+public sealed record SpendingPlannerDto(
+    IReadOnlyList<SpendingPlannerItemDto> Items,
+    long PlannedTotalMinorUnits,
+    long PurchasedTotalMinorUnits,
+    long SavingsBalanceMinorUnits,
+    long RemainingSavingsMinorUnits,
+    string Currency);
+
+public sealed record SpendingPlannerItemDto(Guid Id, string Name, long AmountMinorUnits, string Currency, DateOnly? TargetDate, bool IsPurchased, DateTimeOffset? PurchasedAt, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public sealed record CreateSpendingPlannerItemRequest(string Name, long AmountMinorUnits, string? Currency, DateOnly? TargetDate);
+
+public sealed record UpdateSpendingPlannerItemRequest(string Name, long AmountMinorUnits, string? Currency, DateOnly? TargetDate, bool IsPurchased);
+
 public sealed record SubscriptionDto(
     Guid Id,
     string Name,
