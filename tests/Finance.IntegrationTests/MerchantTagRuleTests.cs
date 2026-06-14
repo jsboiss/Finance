@@ -59,11 +59,21 @@ public sealed class MerchantTagRuleTests : IAsyncLifetime
             {
                 TenantId = tenantA,
                 BankAccountId = tenantAAccountId,
-                ExternalTransactionId = "tenant-a-coles",
+                ExternalTransactionId = "tenant-a-coles-description",
                 Description = "COLES BRISBANE",
                 MerchantName = null,
                 AmountMinorUnits = -4200,
                 PostedDate = new DateOnly(2026, 6, 1)
+            },
+            new BankTransaction
+            {
+                TenantId = tenantA,
+                BankAccountId = tenantAAccountId,
+                ExternalTransactionId = "tenant-a-coles-store",
+                Description = "Coles 4568 Ascot AU",
+                MerchantName = "COLES 4568 ASCOT AU",
+                AmountMinorUnits = -1625,
+                PostedDate = new DateOnly(2026, 6, 3)
             },
             new BankTransaction
             {
@@ -80,9 +90,11 @@ public sealed class MerchantTagRuleTests : IAsyncLifetime
         var queries = CreateQueries(dbContext, tenantA);
         await queries.CreateMerchantTagRule(new CreateMerchantTagRuleRequest("Coles", tag.Id), CancellationToken.None);
 
-        var tenantATransaction = await dbContext.BankTransactions.FirstAsync(x => x.TenantId == tenantA && x.ExternalTransactionId == "tenant-a-coles");
+        var tenantATransaction = await dbContext.BankTransactions.FirstAsync(x => x.TenantId == tenantA && x.ExternalTransactionId == "tenant-a-coles-description");
+        var tenantAStoreTransaction = await dbContext.BankTransactions.FirstAsync(x => x.TenantId == tenantA && x.ExternalTransactionId == "tenant-a-coles-store");
         var tenantBTransaction = await dbContext.BankTransactions.FirstAsync(x => x.TenantId == tenantB && x.ExternalTransactionId == "tenant-b-coles");
         Assert.True(await dbContext.BankTransactionTags.AnyAsync(x => x.TenantId == tenantA && x.BankTransactionId == tenantATransaction.Id && x.TransactionTagId == tag.Id && x.Source == "merchant"));
+        Assert.True(await dbContext.BankTransactionTags.AnyAsync(x => x.TenantId == tenantA && x.BankTransactionId == tenantAStoreTransaction.Id && x.TransactionTagId == tag.Id && x.Source == "merchant"));
         Assert.False(await dbContext.BankTransactionTags.AnyAsync(x => x.TenantId == tenantB && x.BankTransactionId == tenantBTransaction.Id));
     }
 

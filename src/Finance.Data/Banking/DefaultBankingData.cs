@@ -41,6 +41,12 @@ public static class DefaultBankingData
         return string.Join(" ", normalizedValue.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(x => !ignoredTokens.Contains(x)));
     }
 
+    public static bool MatchesMerchantRule(string transactionMerchantKey, string ruleMerchantKey)
+    {
+        return transactionMerchantKey == ruleMerchantKey
+            || transactionMerchantKey.StartsWith($"{ruleMerchantKey} ", StringComparison.Ordinal);
+    }
+
     private static async Task EnsureInternalTransferRules(Guid tenantId, Guid tagId, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
         var merchantKeys = InternalTransferMerchantNames.Select(GetMerchantKey).ToHashSet();
@@ -103,6 +109,6 @@ public static class DefaultBankingData
 
     private static bool MatchesMerchantKey(string merchantKey, HashSet<string> merchantKeys)
     {
-        return merchantKeys.Any(x => merchantKey == x || merchantKey.StartsWith($"{x} ", StringComparison.Ordinal));
+        return merchantKeys.Any(x => MatchesMerchantRule(merchantKey, x));
     }
 }

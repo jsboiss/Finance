@@ -252,7 +252,12 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         }
 
         var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
-        if (!merchantTagsByKey.TryGetValue(merchantKey, out var tagIds))
+        var tagIds = merchantTagsByKey
+            .Where(x => DefaultBankingData.MatchesMerchantRule(merchantKey, x.Key))
+            .SelectMany(x => x.Value)
+            .Distinct()
+            .ToList();
+        if (tagIds.Count == 0)
         {
             return;
         }
@@ -563,10 +568,15 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
         }
 
         var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
-        var tagIds = await dbContext.MerchantTags
-            .Where(x => x.TenantId == tenantId && x.MerchantKey == merchantKey)
-            .Select(x => x.TransactionTagId)
+        var merchantTags = await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId)
+            .Select(x => new { x.MerchantKey, x.TransactionTagId })
             .ToListAsync(cancellationToken);
+        var tagIds = merchantTags
+            .Where(x => DefaultBankingData.MatchesMerchantRule(merchantKey, x.MerchantKey))
+            .Select(x => x.TransactionTagId)
+            .Distinct()
+            .ToList();
 
         if (tagIds.Count == 0)
         {

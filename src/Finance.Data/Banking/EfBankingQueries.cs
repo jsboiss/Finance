@@ -2160,7 +2160,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Select(x => new { x.Id, x.MerchantName, x.Description })
             .ToListAsync(cancellationToken);
         var transactionIds = merchantRows
-            .Where(x => GetTransactionMerchantKey(x.MerchantName, x.Description) == merchantKey)
+            .Where(x => DefaultBankingData.MatchesMerchantRule(GetTransactionMerchantKey(x.MerchantName, x.Description), merchantKey))
             .Select(x => x.Id)
             .ToList();
 
