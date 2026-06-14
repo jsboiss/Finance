@@ -1612,6 +1612,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return CleanDailyCashFlowRange(range) switch
         {
             "1w" => today.AddDays(-6),
+            "30d" => today.AddDays(-29),
             "3m" => today.AddMonths(-3).AddDays(1),
             _ => today.AddMonths(-1).AddDays(1)
         };
@@ -1622,6 +1623,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return range?.Trim().ToLowerInvariant() switch
         {
             "1w" => "1w",
+            "30d" => "30d",
             "3m" => "3m",
             _ => "1m"
         };

@@ -11,6 +11,7 @@ import { currency } from '../lib/format'
 import type { Account, Overview as OverviewSummary, OverviewDailyCashFlow, OverviewMetricSnapshot, SavingsTrajectory as SavingsTrajectorySummary, TransactionTag } from '../lib/types'
 
 type DailyCashFlowRange = '1w' | '1m' | '3m'
+type CashFlowRaceRange = 'currentMonth' | '30d' | '3m'
 
 type MonthSpend = {
   key: string
@@ -36,10 +37,16 @@ const dailyCashFlowRanges: { value: DailyCashFlowRange; label: string; descripti
   { value: '1m', label: '1M', description: 'Last month' },
   { value: '3m', label: '3M', description: 'Last 3 months' }
 ]
+const cashFlowRaceRanges: { value: CashFlowRaceRange; label: string; description: string }[] = [
+  { value: 'currentMonth', label: 'Month', description: 'Current month' },
+  { value: '30d', label: '30D', description: 'Past 30 days' },
+  { value: '3m', label: '3M', description: 'Past 3 months' }
+]
 
 export function Overview() {
   const [overviewAccountId, setOverviewAccountId] = useState('all')
   const [includeInternalTransfers, setIncludeInternalTransfers] = useState(true)
+  const [cashFlowRaceRange, setCashFlowRaceRange] = useState<CashFlowRaceRange>('currentMonth')
   const [dailyCashFlowRange, setDailyCashFlowRange] = useState<DailyCashFlowRange>('1m')
   const [showAverageDailySpendHistory, setShowAverageDailySpendHistory] = useState(false)
   const isAllAccounts = overviewAccountId === 'all'
@@ -73,6 +80,20 @@ export function Overview() {
       return api<OverviewDailyCashFlow[]>(`/api/overview/daily-cash-flow?${params}`)
     }
   })
+  const cashFlowRace = useQuery({
+    enabled: cashFlowRaceRange !== 'currentMonth',
+    placeholderData: x => x,
+    queryKey: ['cash-flow-race', overviewAccountId, includeInternalTransfers, cashFlowRaceRange],
+    queryFn: () => {
+      const params = new URLSearchParams({ range: cashFlowRaceRange })
+      if (!isAllAccounts) {
+        params.set('accountId', overviewAccountId)
+        params.set('includeInternalTransfers', `${includeInternalTransfers}`)
+      }
+
+      return api<OverviewDailyCashFlow[]>(`/api/overview/daily-cash-flow?${params}`)
+    }
+  })
   const averageDailySpendHistory = useQuery({
     enabled: showAverageDailySpendHistory,
     placeholderData: x => x,
@@ -95,6 +116,7 @@ export function Overview() {
   })
   const analysis = useMemo(() => mapOverview(overview.data), [overview.data])
   const dailyCashFlowDays = useMemo(() => mapDailyCashFlow(dailyCashFlowRange === '1m' ? overview.data?.dailyCashFlow : dailyCashFlow.data), [dailyCashFlow.data, dailyCashFlowRange, overview.data?.dailyCashFlow])
+  const cashFlowRaceTotals = useMemo(() => getCashFlowRaceTotals(analysis, cashFlowRaceRange === 'currentMonth' ? undefined : cashFlowRace.data), [analysis, cashFlowRace.data, cashFlowRaceRange])
   const averageDailySpendTrend = useMemo(() => mapAverageDailySpendHistory(averageDailySpendHistory.data), [averageDailySpendHistory.data])
   const largestCategoryTags = useMemo(() => getLargestCategoryTags(analysis.topTags), [analysis.topTags])
   const isLoading = accounts.isLoading || overview.isLoading
@@ -162,11 +184,28 @@ export function Overview() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Cash flow race</CardTitle>
-          <CardDescription>{analysis.currentMonthLabel}</CardDescription>
+          <div>
+            <CardTitle>Cash flow race</CardTitle>
+            <CardDescription>{cashFlowRaceRanges.find(x => x.value === cashFlowRaceRange)?.description ?? analysis.currentMonthLabel}</CardDescription>
+          </div>
+          <CardAction className="inline-flex rounded-md border border-border bg-muted p-1">
+            {cashFlowRaceRanges.map(x => (
+              <Button
+                aria-pressed={cashFlowRaceRange === x.value}
+                className={cashFlowRaceRange === x.value ? 'bg-background shadow-sm hover:bg-background' : 'text-muted-foreground'}
+                key={x.value}
+                onClick={() => setCashFlowRaceRange(x.value)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {x.label}
+              </Button>
+            ))}
+          </CardAction>
         </CardHeader>
         <CardContent>
-          <CashFlowRace income={analysis.currentMonthIncome} expenses={analysis.currentMonthSpend} />
+          <CashFlowRace expenses={cashFlowRaceTotals.expenses} income={cashFlowRaceTotals.income} isLoading={cashFlowRace.isFetching} />
         </CardContent>
       </Card>
 
@@ -282,6 +321,20 @@ function mapAverageDailySpendHistory(days?: OverviewMetricSnapshot[]) {
     key: x.key,
     value: x.averageDailySpendMinorUnits
   }))
+}
+
+function getCashFlowRaceTotals(overview: ReturnType<typeof mapOverview>, days?: OverviewDailyCashFlow[]) {
+  if (!days) {
+    return {
+      income: overview.currentMonthIncome,
+      expenses: overview.currentMonthSpend
+    }
+  }
+
+  return days.reduce((x, y) => ({
+    income: x.income + y.incomeMinorUnits,
+    expenses: x.expenses + y.expensesMinorUnits
+  }), { income: 0, expenses: 0 })
 }
 
 function OverviewLoading() {
@@ -538,14 +591,14 @@ function formatCompactCurrency(value: number, code: string) {
   return new Intl.NumberFormat(undefined, { currency: code, maximumFractionDigits: 0, notation: 'compact', style: 'currency' }).format(value / 100)
 }
 
-function CashFlowRace({ income, expenses }: { income: number; expenses: number }) {
+function CashFlowRace({ income, expenses, isLoading }: { income: number; expenses: number; isLoading: boolean }) {
   const total = Math.max(income + expenses, 1)
   const incomeShare = (income / total) * 100
   const expenseShare = (expenses / total) * 100
   const net = income - expenses
 
   return (
-    <div className="space-y-4">
+    <div className={isLoading ? 'space-y-4 opacity-60 transition-opacity' : 'space-y-4 transition-opacity'}>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
         <CashFlowSide align="left" color="oklch(0.62 0.14 160)" icon={<CircleDollarSign className="h-4 w-4" />} label="Income" value={currency(income, 'AUD')} />
         <div className="rounded-lg border border-border bg-muted px-4 py-3 text-center sm:min-w-44">
