@@ -2156,11 +2156,11 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     private async Task ApplyMerchantTag(Guid tenantId, string merchantKey, Guid tagId, CancellationToken cancellationToken)
     {
         var merchantRows = await dbContext.BankTransactions
-            .Where(x => x.TenantId == tenantId && x.MerchantName != null)
-            .Select(x => new { x.Id, x.MerchantName })
+            .Where(x => x.TenantId == tenantId)
+            .Select(x => new { x.Id, x.MerchantName, x.Description })
             .ToListAsync(cancellationToken);
         var transactionIds = merchantRows
-            .Where(x => x.MerchantName is not null && DefaultBankingData.GetMerchantKey(x.MerchantName) == merchantKey)
+            .Where(x => GetTransactionMerchantKey(x.MerchantName, x.Description) == merchantKey)
             .Select(x => x.Id)
             .ToList();
 
