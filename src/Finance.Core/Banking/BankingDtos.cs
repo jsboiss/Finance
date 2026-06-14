@@ -23,9 +23,9 @@ public sealed record TransactionDto(
     string Status,
     IReadOnlyList<TransactionTagDto> Tags);
 
-public sealed record TransactionTagDto(Guid Id, string Name, string Color);
+public sealed record TransactionTagDto(Guid Id, string Name, string Color, bool IsSystem = false);
 
-public sealed record MerchantTagRuleDto(Guid Id, string MerchantName, TransactionTagDto Tag);
+public sealed record MerchantTagRuleDto(Guid Id, string MerchantName, TransactionTagDto Tag, bool IsSystem = false);
 
 public sealed record CreateTransactionTagRequest(string Name, string? Color);
 

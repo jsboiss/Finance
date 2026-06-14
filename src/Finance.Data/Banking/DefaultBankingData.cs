@@ -10,14 +10,7 @@ public static class DefaultBankingData
 
     public static string InternalTransferTagColor => "#64748b";
 
-    public static IReadOnlyList<string> InternalTransferMerchantNames { get; } =
-    [
-        "Internal transfer",
-        "Transfer",
-        "Bank transfer",
-        "Funds transfer",
-        "Account transfer"
-    ];
+    public static int InternalTransferPostingWindowDays => 3;
 
     public static async Task<TransactionTag> EnsureDefaultTags(Guid tenantId, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
@@ -29,7 +22,7 @@ public static class DefaultBankingData
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        await EnsureInternalTransferRules(tenantId, tag.Id, dbContext, cancellationToken);
+        await RemoveInternalTransferRules(tenantId, tag.Id, dbContext, cancellationToken);
         await ApplyInternalTransferTag(tenantId, tag.Id, dbContext, cancellationToken);
         return tag;
     }
@@ -47,37 +40,29 @@ public static class DefaultBankingData
             || transactionMerchantKey.StartsWith($"{ruleMerchantKey} ", StringComparison.Ordinal);
     }
 
-    private static async Task EnsureInternalTransferRules(Guid tenantId, Guid tagId, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    public static bool IsInternalTransferTag(string tagName)
     {
-        var merchantKeys = InternalTransferMerchantNames.Select(GetMerchantKey).ToHashSet();
-        var existingMerchantKeys = await dbContext.MerchantTags
-            .Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId && merchantKeys.Contains(x.MerchantKey))
-            .Select(x => x.MerchantKey)
-            .ToListAsync(cancellationToken);
+        return tagName.Equals(InternalTransferTagName, StringComparison.OrdinalIgnoreCase);
+    }
 
-        foreach (var name in InternalTransferMerchantNames)
-        {
-            var merchantKey = GetMerchantKey(name);
-            if (!existingMerchantKeys.Contains(merchantKey))
-            {
-                dbContext.MerchantTags.Add(new MerchantTag { TenantId = tenantId, MerchantName = name, MerchantKey = merchantKey, TransactionTagId = tagId });
-            }
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+    private static async Task RemoveInternalTransferRules(Guid tenantId, Guid tagId, FinanceDbContext dbContext, CancellationToken cancellationToken)
+    {
+        await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     private static async Task ApplyInternalTransferTag(Guid tenantId, Guid tagId, FinanceDbContext dbContext, CancellationToken cancellationToken)
     {
-        var merchantKeys = InternalTransferMerchantNames.Select(GetMerchantKey).ToHashSet();
         var transactionRows = await dbContext.BankTransactions
-            .Where(x => x.TenantId == tenantId)
-            .Select(x => new { x.Id, x.MerchantName, x.Description })
+            .Where(x => x.TenantId == tenantId && x.Status == "posted" && x.AmountMinorUnits != 0)
+            .Select(x => new InternalTransferTransactionRow(x.Id, x.BankAccountId, x.AmountMinorUnits, x.Currency, x.PostedDate))
             .ToListAsync(cancellationToken);
-        var transactionIds = transactionRows
-            .Where(x => MatchesInternalTransfer(x.MerchantName, x.Description, merchantKeys))
-            .Select(x => x.Id)
-            .ToList();
+        var transactionIds = GetInternalTransferTransactionIds(transactionRows);
+
+        await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.TransactionTagId == tagId && x.Source != "manual")
+            .ExecuteDeleteAsync(cancellationToken);
 
         if (transactionIds.Count == 0)
         {
@@ -97,18 +82,39 @@ public static class DefaultBankingData
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static bool MatchesInternalTransfer(string? merchantName, string description, HashSet<string> merchantKeys)
+    private static List<Guid> GetInternalTransferTransactionIds(IReadOnlyList<InternalTransferTransactionRow> transactions)
     {
-        if (!string.IsNullOrWhiteSpace(merchantName) && MatchesMerchantKey(GetMerchantKey(merchantName), merchantKeys))
+        var debits = transactions
+            .Where(x => x.AmountMinorUnits < 0)
+            .OrderBy(x => x.PostedDate)
+            .ToList();
+        var credits = transactions
+            .Where(x => x.AmountMinorUnits > 0)
+            .OrderBy(x => x.PostedDate)
+            .ToList();
+        var matchedCreditIds = new HashSet<Guid>();
+        var internalTransactionIds = new HashSet<Guid>();
+
+        foreach (var debit in debits)
         {
-            return true;
+            var credit = credits.FirstOrDefault(x =>
+                !matchedCreditIds.Contains(x.Id)
+                && x.BankAccountId != debit.BankAccountId
+                && x.Currency == debit.Currency
+                && x.AmountMinorUnits == Math.Abs(debit.AmountMinorUnits)
+                && Math.Abs(x.PostedDate.DayNumber - debit.PostedDate.DayNumber) <= InternalTransferPostingWindowDays);
+            if (credit is null)
+            {
+                continue;
+            }
+
+            matchedCreditIds.Add(credit.Id);
+            internalTransactionIds.Add(debit.Id);
+            internalTransactionIds.Add(credit.Id);
         }
 
-        return !string.IsNullOrWhiteSpace(description) && MatchesMerchantKey(GetMerchantKey(description), merchantKeys);
+        return internalTransactionIds.ToList();
     }
 
-    private static bool MatchesMerchantKey(string merchantKey, HashSet<string> merchantKeys)
-    {
-        return merchantKeys.Any(x => MatchesMerchantRule(merchantKey, x));
-    }
+    private sealed record InternalTransferTransactionRow(Guid Id, Guid BankAccountId, long AmountMinorUnits, string Currency, DateOnly PostedDate);
 }

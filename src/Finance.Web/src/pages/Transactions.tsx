@@ -69,7 +69,7 @@ export function Transactions() {
     onMutate: async input => {
       await queryClient.cancelQueries({ queryKey: ['tags'] })
       const previousTags = queryClient.getQueryData<TransactionTag[]>(['tags'])
-      const optimisticTag = { id: `pending-${crypto.randomUUID()}`, name: input.name, color: input.color }
+      const optimisticTag = { id: `pending-${crypto.randomUUID()}`, name: input.name, color: input.color, isSystem: false }
       queryClient.setQueryData<TransactionTag[]>(['tags'], x => [...(x ?? []), optimisticTag])
       setTagName('')
       return { optimisticTagId: optimisticTag.id, previousTags }
@@ -139,10 +139,11 @@ export function Transactions() {
       const tag = queryClient.getQueryData<TransactionTag[]>(['tags'])?.find(x => x.id === input.tagId)
       const optimisticRuleId = `pending-${crypto.randomUUID()}`
       if (tag) {
-        const merchantKey = getMerchantKey(input.merchantName)
-        queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => [...(x ?? []), { id: optimisticRuleId, merchantName: input.merchantName, tag }])
+        const ruleMerchantKey = getMerchantKey(input.merchantName)
+        queryClient.setQueryData<MerchantTagRule[]>(['merchant-tags'], x => [...(x ?? []), { id: optimisticRuleId, merchantName: input.merchantName, tag, isSystem: false }])
         queryClient.setQueryData<Transaction[]>(['transactions'], x => (x ?? []).map(y => {
-          if (!y.merchantName || getMerchantKey(y.merchantName) !== merchantKey || y.tags.some(z => z.id === tag.id)) {
+          const transactionMerchantName = y.merchantName?.trim() ? y.merchantName : y.description
+          if (!transactionMerchantName || !matchesMerchantRule(getMerchantKey(transactionMerchantName), ruleMerchantKey) || y.tags.some(z => z.id === tag.id)) {
             return y
           }
 
@@ -291,9 +292,11 @@ export function Transactions() {
               {(tags.data ?? []).map(x => (
                 <span className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1" key={x.id}>
                   <TagPill tag={x} />
-                  <button aria-label={`Delete tag ${x.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteTag.mutate(x.id)} type="button">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {!x.isSystem && (
+                    <button aria-label={`Delete tag ${x.name}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteTag.mutate(x.id)} type="button">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </span>
               ))}
               {!tags.isLoading && (tags.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No tags yet.</span>}
@@ -317,9 +320,11 @@ export function Transactions() {
                 <span className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1 text-xs" key={x.id}>
                   {x.merchantName}
                   <TagPill tag={x.tag} />
-                  <button aria-label={`Delete rule for ${x.merchantName}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteMerchantRule.mutate(x.id)} type="button">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {!x.isSystem && (
+                    <button aria-label={`Delete rule for ${x.merchantName}`} className="text-muted-foreground hover:text-foreground" onClick={() => deleteMerchantRule.mutate(x.id)} type="button">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </span>
               ))}
               {!merchantRules.isLoading && (merchantRules.data?.length ?? 0) === 0 && <span className="text-sm text-muted-foreground">No merchant rules yet.</span>}
@@ -525,10 +530,11 @@ function TagEditor({ allTags, selectedTags, onChange }: { allTags: TransactionTa
           style={{ left: popupPosition.left, maxHeight: popupPosition.maxHeight, top: popupPosition.top, transform: popupPosition.placement === 'above' ? 'translateY(-100%)' : undefined }}
         >
           {allTags.map(x => (
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted" key={x.id}>
+            <label className={x.isSystem ? 'inline-flex cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-xs opacity-60' : 'inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted'} key={x.id}>
               <input
                 checked={selectedIds.has(x.id)}
                 className="h-3.5 w-3.5"
+                disabled={x.isSystem}
                 onChange={y => {
                   const nextIds = y.target.checked ? [...selectedIds, x.id] : [...selectedIds].filter(z => z !== x.id)
                   setSelectedTagIds(nextIds)
@@ -599,6 +605,10 @@ function getMerchantKey(merchantName: string) {
     .split(' ')
     .filter(x => x && !ignoredTokens.has(x))
     .join(' ')
+}
+
+function matchesMerchantRule(transactionMerchantKey: string, ruleMerchantKey: string) {
+  return transactionMerchantKey === ruleMerchantKey || transactionMerchantKey.startsWith(`${ruleMerchantKey} `)
 }
 
 function DateRangeFilter({ value, onChange }: { value: DateFilter; onChange: (value: DateFilter) => void }) {

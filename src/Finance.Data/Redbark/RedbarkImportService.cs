@@ -207,6 +207,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
             ImportedCount = importedCount,
             CompletedAt = DateTimeOffset.UtcNow
         });
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -313,6 +314,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
                 }
             }
 
+            await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
             run.ImportedCount = importedCount;
             run.Status = "completed";
             run.CompletedAt = DateTimeOffset.UtcNow;
@@ -361,6 +363,7 @@ public sealed class RedbarkImportService(FinanceDbContext dbContext, IRedbarkCli
                 }
             }
 
+            await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
             run.ImportedCount = importedCount;
             run.Status = "completed";
             run.CompletedAt = DateTimeOffset.UtcNow;

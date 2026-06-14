@@ -30,7 +30,7 @@ type TagSpend = {
   months: number[]
 }
 
-const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '#94a3b8' }
+const fallbackTag: TransactionTag = { id: 'untagged', name: 'Untagged', color: '#94a3b8', isSystem: false }
 const internalTransferTagName = 'Internal'
 const dailyCashFlowRanges: { value: DailyCashFlowRange; label: string; description: string }[] = [
   { value: '1w', label: '1W', description: 'Last 7 days' },

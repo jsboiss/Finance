@@ -100,6 +100,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<OverviewDto> GetOverview(Guid? accountId, bool? includeInternalTransfers, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var currentMonthKey = $"{today.Year:D4}-{today.Month:D2}";
         var firstVisibleMonth = today.AddMonths(-5);
@@ -381,6 +382,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<IReadOnlyList<OverviewDailyCashFlowDto>> GetDailyCashFlow(Guid? accountId, bool? includeInternalTransfers, string? range, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var from = GetDailyCashFlowStart(today, range);
         var shouldIncludeInternalTransfers = ShouldIncludeInternalTransfers(accountId, includeInternalTransfers);
@@ -417,6 +419,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<IReadOnlyList<TransactionDto>> GetTransactions(TransactionQuery query, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
+        await DefaultBankingData.EnsureDefaultTags(tenantId, dbContext, cancellationToken);
         var transactions = dbContext.BankTransactions.AsNoTracking().Where(x => x.TenantId == tenantId);
 
         if (query.AccountId is { } accountId)
@@ -492,7 +495,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
             .Join(dbContext.TransactionTags.AsNoTracking().Where(x => x.TenantId == tenantId),
                 x => x.TransactionTagId,
                 y => y.Id,
-                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color) })
+                (x, y) => new { x.BankTransactionId, Tag = new TransactionTagDto(y.Id, y.Name, y.Color, y.Name == DefaultBankingData.InternalTransferTagName) })
             .GroupBy(x => x.BankTransactionId)
             .ToDictionaryAsync(x => x.Key, x => x.Select(y => y.Tag).OrderBy(y => y.Name).ToList(), cancellationToken);
 
@@ -772,7 +775,7 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         return await dbContext.TransactionTags
             .Where(x => x.TenantId == tenantId)
             .OrderBy(x => x.Name)
-            .Select(x => new TransactionTagDto(x.Id, x.Name, x.Color))
+            .Select(x => new TransactionTagDto(x.Id, x.Name, x.Color, x.Name == DefaultBankingData.InternalTransferTagName))
             .ToListAsync(cancellationToken);
     }
 
@@ -800,8 +803,13 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<bool> DeleteTag(Guid tagId, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
-        var exists = await dbContext.TransactionTags.AnyAsync(x => x.TenantId == tenantId && x.Id == tagId, cancellationToken);
-        if (!exists)
+        var tag = await dbContext.TransactionTags.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.Id == tagId, cancellationToken);
+        if (tag is null)
+        {
+            return false;
+        }
+
+        if (DefaultBankingData.IsInternalTransferTag(tag.Name))
         {
             return false;
         }
@@ -823,13 +831,17 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
 
         var requestedTagIds = request.TagIds.Distinct().ToList();
+        var systemTagIds = await dbContext.TransactionTags
+            .Where(x => x.TenantId == tenantId && x.Name == DefaultBankingData.InternalTransferTagName)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
         var tags = await dbContext.TransactionTags
-            .Where(x => x.TenantId == tenantId && requestedTagIds.Contains(x.Id))
+            .Where(x => x.TenantId == tenantId && requestedTagIds.Contains(x.Id) && !systemTagIds.Contains(x.Id))
             .ToListAsync(cancellationToken);
         var validTagIds = tags.Select(x => x.Id).ToHashSet();
 
         await dbContext.BankTransactionTags
-            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transactionId && !validTagIds.Contains(x.TransactionTagId))
+            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transactionId && !validTagIds.Contains(x.TransactionTagId) && !systemTagIds.Contains(x.TransactionTagId))
             .ExecuteDeleteAsync(cancellationToken);
 
         var existingTagIds = await dbContext.BankTransactionTags
@@ -843,7 +855,14 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return tags.Select(x => new TransactionTagDto(x.Id, x.Name, x.Color)).OrderBy(x => x.Name).ToList();
+        return await dbContext.BankTransactionTags
+            .Where(x => x.TenantId == tenantId && x.BankTransactionId == transactionId)
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new TransactionTagDto(y.Id, y.Name, y.Color, y.Name == DefaultBankingData.InternalTransferTagName))
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<MerchantTagRuleDto>> GetMerchantTagRules(CancellationToken cancellationToken)
@@ -858,7 +877,11 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
                 (x, y) => new { Rule = x, Tag = y })
             .OrderBy(x => x.Rule.MerchantName)
             .ThenBy(x => x.Tag.Name)
-            .Select(x => new MerchantTagRuleDto(x.Rule.Id, x.Rule.MerchantName, new TransactionTagDto(x.Tag.Id, x.Tag.Name, x.Tag.Color)))
+            .Select(x => new MerchantTagRuleDto(
+                x.Rule.Id,
+                x.Rule.MerchantName,
+                new TransactionTagDto(x.Tag.Id, x.Tag.Name, x.Tag.Color, x.Tag.Name == DefaultBankingData.InternalTransferTagName),
+                x.Tag.Name == DefaultBankingData.InternalTransferTagName))
             .ToListAsync(cancellationToken);
     }
 
@@ -873,6 +896,11 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
 
         var merchantKey = DefaultBankingData.GetMerchantKey(merchantName);
         var tag = await dbContext.TransactionTags.FirstAsync(x => x.TenantId == tenantId && x.Id == request.TagId, cancellationToken);
+        if (DefaultBankingData.IsInternalTransferTag(tag.Name))
+        {
+            throw new InvalidOperationException("Internal transfer tagging is system-managed.");
+        }
+
         var rule = await dbContext.MerchantTags.FirstOrDefaultAsync(x => x.TenantId == tenantId && x.MerchantKey == merchantKey && x.TransactionTagId == request.TagId, cancellationToken);
         if (rule is null)
         {
@@ -888,7 +916,26 @@ public sealed class EfBankingQueries(FinanceDbContext dbContext, ITenantContext 
     public async Task<bool> DeleteMerchantTagRule(Guid ruleId, CancellationToken cancellationToken)
     {
         var tenantId = tenantContext.TenantId;
-        return await dbContext.MerchantTags.Where(x => x.TenantId == tenantId && x.Id == ruleId).ExecuteDeleteAsync(cancellationToken) > 0;
+        var rule = await dbContext.MerchantTags
+            .Where(x => x.TenantId == tenantId && x.Id == ruleId)
+            .Join(dbContext.TransactionTags.Where(x => x.TenantId == tenantId),
+                x => x.TransactionTagId,
+                y => y.Id,
+                (x, y) => new { Rule = x, Tag = y })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (rule is null)
+        {
+            return false;
+        }
+
+        if (DefaultBankingData.IsInternalTransferTag(rule.Tag.Name))
+        {
+            return false;
+        }
+
+        dbContext.MerchantTags.Remove(rule.Rule);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task<IReadOnlyList<ImportRunDto>> GetImportRuns(CancellationToken cancellationToken)

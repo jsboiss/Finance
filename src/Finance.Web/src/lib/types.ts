@@ -44,12 +44,14 @@ export type TransactionTag = {
   id: string
   name: string
   color: string
+  isSystem: boolean
 }
 
 export type MerchantTagRule = {
   id: string
   merchantName: string
   tag: TransactionTag
+  isSystem: boolean
 }
 
 export type ImportRun = {
